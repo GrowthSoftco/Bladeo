@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #2563eb;
+  --color-brand-light: #3b82f6;
+  --color-brand-dark: #1d4ed8;
+  --color-surface: #0a0a0f;
+  --color-surface-elevated: #12121a;
+  --color-surface-overlay: #1a1a25;
+  --color-border: #2a2a3a;
+  --color-text-primary: #f0f0f5;
+  --color-text-secondary: #8888a0;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body { margin: 0; min-height: 100vh; }
+
+  input, textarea, select { color-scheme: dark; }
+
+  :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  ::selection { background-color: var(--color-brand); color: white; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--color-surface); }
+  ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
+}
+
+/* ── Light theme: CSS variable overrides ──────────────────────────────────── */
+[data-color-theme^="light"] {
+  color-scheme: light;
+  --color-surface: #f5f7ff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #eef1fb;
+  --color-border: #d4d9f0;
+  --color-text-primary: #0f1428;
+  --color-text-secondary: #5060a0;
+}
+[data-color-theme="light-gris"] {
+  --color-surface: #f2f2f5;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #ebebf2;
+  --color-border: #d0d0de;
+  --color-text-primary: #111118;
+  --color-text-secondary: #606075;
+}
+[data-color-theme="light-crema"] {
+  --color-surface: #fdf8f0;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #f5ede0;
+  --color-border: #e0d0b8;
+  --color-text-primary: #1a1008;
+  --color-text-secondary: #806040;
+}
+[data-color-theme="light-menta"] {
+  --color-surface: #f0faf8;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #e0f5f0;
+  --color-border: #b8e0da;
+  --color-text-primary: #051a18;
+  --color-text-secondary: #407070;
+}
+[data-color-theme^="light"] input,
+[data-color-theme^="light"] textarea,
+[data-color-theme^="light"] select { color-scheme: light; }
+[data-color-theme^="light"] ::-webkit-scrollbar-track { background: var(--color-surface); }
+[data-color-theme^="light"] ::-webkit-scrollbar-thumb { background: var(--color-border); }

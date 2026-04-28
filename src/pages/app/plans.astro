@@ -1,0 +1,317 @@
+---
+import '@/styles/global.css';
+import { PLAN_NAMES } from '@/lib/stripe-config';
+import type { Subscription } from '@/lib/types';
+
+const subscription = Astro.locals.subscription as Subscription | null;
+const isInactive = subscription && subscription.status !== 'active' && subscription.status !== 'incomplete';
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elige tu plan — Bladeo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body class="min-h-screen bg-[#0a0a0f] text-[#f0f0f5]">
+  <!-- Header -->
+  <div class="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-[#2563eb] rounded-lg flex items-center justify-center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M6 3l2 4-2 4 2 4-2 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 3v18" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          <path d="M18 3l-2 4 2 4-2 4 2 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="text-lg font-bold text-white">Bladeo</span>
+    </div>
+    <form method="POST" action="/api/auth/logout">
+      <button type="submit" class="text-sm text-[var(--color-text-secondary)] hover:text-white transition-colors">
+        Cerrar sesión
+      </button>
+    </form>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-4 py-12">
+    <div class="text-center mb-10">
+      <h1 class="text-3xl font-bold text-white mb-3">Elige tu plan para comenzar</h1>
+      <p class="text-[var(--color-text-secondary)] text-lg">Sin compromisos. Cancela cuando quieras.</p>
+
+      {isInactive && (
+        <div class="mt-6 px-6 py-4 bg-warning/10 border border-warning/30 rounded-xl text-warning text-sm inline-block">
+          Tu suscripción está inactiva. Elige un plan para reactivar tu cuenta.
+        </div>
+      )}
+    </div>
+
+    <!-- Billing toggle -->
+    <div class="flex items-center justify-center gap-4 mb-10">
+      <span id="label-monthly" class="text-sm font-medium text-white">Mensual</span>
+      <button
+        id="billing-toggle"
+        class="relative w-12 h-6 rounded-full bg-brand transition-colors"
+        role="switch"
+        aria-checked="false"
+      >
+        <span id="toggle-knob" class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200"></span>
+      </button>
+      <span id="label-annual" class="text-sm font-medium text-[var(--color-text-secondary)]">
+        Anual
+        <span class="ml-1.5 bg-success/20 text-success text-xs font-semibold px-2 py-0.5 rounded-full">Ahorra 2 meses</span>
+      </span>
+    </div>
+
+    <!-- Error banner -->
+    <div id="checkout-error" class="hidden max-w-md mx-auto mb-6 px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm text-center"></div>
+
+    <!-- Plan cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Basic -->
+      <div class="relative bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-2xl p-6 flex flex-col">
+        <div class="mb-6">
+          <h2 class="text-lg font-bold text-white mb-1">Básico</h2>
+          <div class="flex items-end gap-1">
+            <span id="basic-price" class="text-3xl font-bold text-white">$79.900</span>
+            <span class="text-[var(--color-text-secondary)] text-sm mb-1">/mes</span>
+          </div>
+          <p id="basic-annual-note" class="text-xs text-[var(--color-text-secondary)] mt-1 hidden">Facturado anualmente</p>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1">
+          {[
+            ['1 barbero (solo dueño)', true],
+            ['Agenda + Booking público', true],
+            ['Clientes + Historial', true],
+            ['POS básico (servicios)', true],
+            ['Productos en POS', false],
+            ['Fidelización', false],
+            ['Re-Marketing', false],
+            ['Contabilidad', false],
+            ['War Room', false],
+            ['Corresponsal Bancario', false],
+          ].map(([label, included]) => (
+            <li class="flex items-center gap-3 text-sm">
+              {included ? (
+                <svg class="w-4 h-4 text-success flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+              ) : (
+                <svg class="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+              )}
+              <span class={included ? 'text-[#f0f0f5]' : 'text-[var(--color-text-secondary)]'}>{label}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          data-tier="basic"
+          class="checkout-btn w-full py-3 px-6 border border-[var(--color-border)] hover:bg-[#1a1a25] text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+        >
+          Elegir plan
+        </button>
+      </div>
+
+      <!-- Pro (most popular) -->
+      <div class="relative bg-[var(--color-surface-elevated)] border-2 border-brand rounded-2xl p-6 flex flex-col">
+        <div class="absolute -top-3.5 left-1/2 -translate-x-1/2">
+          <span class="bg-brand text-white text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap">Más popular</span>
+        </div>
+        <div class="mb-6">
+          <h2 class="text-lg font-bold text-white mb-1">Pro</h2>
+          <div class="flex items-end gap-1">
+            <span id="pro-price" class="text-3xl font-bold text-white">$149.900</span>
+            <span class="text-[var(--color-text-secondary)] text-sm mb-1">/mes</span>
+          </div>
+          <p id="pro-annual-note" class="text-xs text-[var(--color-text-secondary)] mt-1 hidden">Facturado anualmente</p>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1">
+          {[
+            ['Hasta 5 barberos', true],
+            ['Agenda + Booking público', true],
+            ['Clientes + Historial', true],
+            ['POS completo (servicios + productos)', true],
+            ['Fidelización', true],
+            ['Re-Marketing', true],
+            ['Contabilidad', true],
+            ['Galería + Reviews', true],
+            ['War Room', false],
+            ['Corresponsal Bancario', false],
+          ].map(([label, included]) => (
+            <li class="flex items-center gap-3 text-sm">
+              {included ? (
+                <svg class="w-4 h-4 text-success flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+              ) : (
+                <svg class="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+              )}
+              <span class={included ? 'text-[#f0f0f5]' : 'text-[var(--color-text-secondary)]'}>{label}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          data-tier="pro"
+          class="checkout-btn w-full py-3 px-6 bg-brand hover:bg-brand-light text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+        >
+          Elegir plan
+        </button>
+      </div>
+
+      <!-- Elite -->
+      <div class="relative bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-2xl p-6 flex flex-col">
+        <div class="mb-6">
+          <h2 class="text-lg font-bold text-white mb-1">Elite</h2>
+          <div class="flex items-end gap-1">
+            <span id="elite-price" class="text-3xl font-bold text-white">$249.900</span>
+            <span class="text-[var(--color-text-secondary)] text-sm mb-1">/mes</span>
+          </div>
+          <p id="elite-annual-note" class="text-xs text-[var(--color-text-secondary)] mt-1 hidden">Facturado anualmente</p>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1">
+          {[
+            ['Barberos ilimitados', true],
+            ['Todo lo de Pro', true],
+            ['War Room (Analytics)', true],
+            ['Corresponsal Bancario', true],
+            ['Comisiones por barbero', true],
+            ['Soporte prioritario', true],
+          ].map(([label, included]) => (
+            <li class="flex items-center gap-3 text-sm">
+              <svg class="w-4 h-4 text-success flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+              <span class="text-[#f0f0f5]">{label}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          data-tier="elite"
+          class="checkout-btn w-full py-3 px-6 border border-[var(--color-border)] hover:bg-[#1a1a25] text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+        >
+          Elegir plan
+        </button>
+      </div>
+    </div>
+
+    <!-- FAQ -->
+    <div class="mt-16 max-w-2xl mx-auto">
+      <h3 class="text-xl font-bold text-white mb-6 text-center">Preguntas frecuentes</h3>
+      <div class="space-y-4">
+        {[
+          ['¿Puedo cambiar de plan?', 'Sí, puedes cambiar de plan en cualquier momento desde la sección de Configuración. El cambio se aplica de inmediato.'],
+          ['¿Cómo cancelo mi suscripción?', 'Puedes cancelar en cualquier momento desde Configuración → Suscripción. No hay penalidades ni cobros adicionales.'],
+          ['¿Qué métodos de pago aceptan?', 'Aceptamos tarjetas de crédito y débito (Visa, Mastercard, Amex) procesadas de forma segura por Stripe.'],
+          ['¿Hay período de prueba?', 'Actualmente no ofrecemos período de prueba gratuito, pero puedes cancelar en cualquier momento si no estás satisfecho.'],
+        ].map(([q, a]) => (
+          <details class="group bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl overflow-hidden">
+            <summary class="flex items-center justify-between px-5 py-4 cursor-pointer text-white font-medium text-sm">
+              {q}
+              <svg class="w-4 h-4 text-[var(--color-text-secondary)] transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </summary>
+            <div class="px-5 pb-4 text-[var(--color-text-secondary)] text-sm leading-relaxed">{a}</div>
+          </details>
+        ))}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+<script>
+  const prices = {
+    basic: { monthly: 79900, annual: 799000 },
+    pro: { monthly: 149900, annual: 1499000 },
+    elite: { monthly: 249900, annual: 2499000 },
+  };
+
+  let isAnnual = false;
+  const toggle = document.getElementById('billing-toggle') as HTMLButtonElement;
+  const knob = document.getElementById('toggle-knob') as HTMLSpanElement;
+  const labelAnnual = document.getElementById('label-annual') as HTMLSpanElement;
+  const labelMonthly = document.getElementById('label-monthly') as HTMLSpanElement;
+
+  function formatCOP(amount: number) {
+    return '$' + Math.round(amount).toLocaleString('es-CO').replace(/,/g, '.');
+  }
+
+  function updatePrices() {
+    for (const tier of ['basic', 'pro', 'elite'] as const) {
+      const el = document.getElementById(`${tier}-price`) as HTMLSpanElement;
+      const note = document.getElementById(`${tier}-annual-note`) as HTMLParagraphElement;
+      const tierPrices = prices[tier];
+      if (isAnnual) {
+        el.textContent = formatCOP(tierPrices.annual / 12) + '/mes';
+        note.classList.remove('hidden');
+        note.textContent = `${formatCOP(tierPrices.annual)}/año`;
+      } else {
+        el.textContent = formatCOP(tierPrices.monthly);
+        note.classList.add('hidden');
+      }
+    }
+  }
+
+  toggle.addEventListener('click', () => {
+    isAnnual = !isAnnual;
+    knob.style.transform = isAnnual ? 'translateX(24px)' : 'translateX(0)';
+    toggle.setAttribute('aria-checked', String(isAnnual));
+    labelMonthly.className = `text-sm font-medium ${isAnnual ? 'text-[var(--color-text-secondary)]' : 'text-white'}`;
+    labelAnnual.querySelector('span:first-child')?.remove();
+    updatePrices();
+  });
+
+  const errorBanner = document.getElementById('checkout-error') as HTMLDivElement;
+
+  document.querySelectorAll('.checkout-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tier = (btn as HTMLElement).dataset.tier;
+      const billingCycle = isAnnual ? 'annual' : 'monthly';
+      const originalText = (btn as HTMLButtonElement).textContent?.trim();
+      (btn as HTMLButtonElement).disabled = true;
+      (btn as HTMLButtonElement).textContent = 'Activando...';
+      errorBanner.classList.add('hidden');
+
+      try {
+        // Try Stripe first; fall back to direct activation (dev mode)
+        let activated = false;
+        try {
+          const stripeRes = await fetch('/api/stripe/create-checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier, billingCycle }),
+          });
+          const stripeData = await stripeRes.json();
+          if (stripeRes.ok && stripeData.url) {
+            window.location.href = stripeData.url;
+            activated = true;
+          }
+        } catch {}
+
+        if (!activated) {
+          // Direct activation (Stripe not configured)
+          const res = await fetch('/api/subscriptions/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier, billing_cycle: billingCycle }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? 'Error al activar el plan.');
+          window.location.href = '/app';
+        }
+      } catch (err: any) {
+        errorBanner.textContent = err.message;
+        errorBanner.classList.remove('hidden');
+        (btn as HTMLButtonElement).disabled = false;
+        (btn as HTMLButtonElement).textContent = originalText ?? 'Elegir plan';
+      }
+    });
+  });
+</script>

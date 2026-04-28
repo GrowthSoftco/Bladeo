@@ -1,0 +1,1318 @@
+---
+import '@/styles/global.css';
+import ClientRouter from 'astro/components/ClientRouter.astro';
+import type { Member, Barbershop, Subscription } from '@/lib/types';
+import { hasAccess } from '@/lib/stripe-config';
+
+interface Props {
+  title?: string;
+}
+
+const { title = 'Dashboard' } = Astro.props;
+const member = Astro.locals.member as Member;
+const barbershop = Astro.locals.barbershop as Barbershop;
+const subscription = Astro.locals.subscription as Subscription;
+
+const tier = subscription?.tier ?? (subscription as any)?.plan_name ?? 'basic';
+const isOwner = member?.role === 'owner';
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: string;
+  module?: string;
+  ownerOnly?: boolean;
+  requiredTier?: 'pro' | 'elite';
+}
+
+// Feature #4: Removed "Configuración" and "Mi Landing" from sidebar — moved to avatar dropdown
+const navItems: NavItem[] = [
+  { label: 'Dashboard', href: '/app', icon: 'home' },
+  { label: 'Agenda', href: '/app/agenda', icon: 'calendar', module: 'agenda' },
+  { label: 'Clientes', href: '/app/clients', icon: 'users', module: 'clients' },
+  { label: 'POS', href: '/app/pos', icon: 'shopping-cart', module: 'pos_services' },
+  { label: 'Productos', href: '/app/products', icon: 'package', module: 'pos_products', requiredTier: 'pro' },
+  { label: 'Servicios', href: '/app/services', icon: 'scissors', module: 'pos_services' },
+  { label: 'Re-Marketing', href: '/app/remarketing', icon: 'megaphone', module: 'remarketing', ownerOnly: true, requiredTier: 'pro' },
+  { label: 'Contabilidad', href: '/app/accounting', icon: 'bar-chart', module: 'accounting', ownerOnly: true, requiredTier: 'pro' },
+  { label: 'Corresponsal', href: '/app/banking', icon: 'banknote', module: 'banking', ownerOnly: true, requiredTier: 'elite' },
+  { label: 'War Room', href: '/app/warroom', icon: 'trophy', module: 'warroom', ownerOnly: true, requiredTier: 'elite' },
+  { label: 'Galería', href: '/app/gallery', icon: 'image', module: 'gallery', requiredTier: 'pro' },
+  { label: 'Equipo', href: '/app/team', icon: 'users-2', ownerOnly: true },
+];
+
+const currentPath = Astro.url.pathname;
+const currentReport = Astro.url.searchParams.get('r') ?? '';
+const isAccountingActive = currentPath.startsWith('/app/accounting');
+
+function isActive(href: string) {
+  if (href === '/app') return currentPath === '/app';
+  return currentPath.startsWith(href);
+}
+
+function isLocked(item: NavItem): boolean {
+  if (!item.module) return false;
+  if (item.ownerOnly && !isOwner) return true;
+  if (item.requiredTier) {
+    if (item.requiredTier === 'pro' && tier === 'basic') return true;
+    if (item.requiredTier === 'elite' && (tier === 'basic' || tier === 'pro')) return true;
+  }
+  return false;
+}
+
+function getTierBadge(item: NavItem): string | null {
+  if (!item.requiredTier) return null;
+  if (item.requiredTier === 'pro' && tier === 'basic') return 'Pro';
+  if (item.requiredTier === 'elite' && tier !== 'elite') return 'Elite';
+  return null;
+}
+
+// Sidebar icon SVGs (inline for Astro compatibility)
+const icons: Record<string, string> = {
+  'home': '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>',
+  'calendar': '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>',
+  'users': '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
+  'shopping-cart': '<circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>',
+  'package': '<line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line>',
+  'scissors': '<circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line>',
+  'megaphone': '<path d="M3 11l19-9-9 19-2-8-8-2z"></path>',
+  'bar-chart': '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>',
+  'banknote': '<rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path>',
+  'trophy': '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"></path>',
+  'image': '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>',
+  'users-2': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
+  'settings': '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
+  'globe': '<circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>',
+  'log-out': '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>',
+  'bell': '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path>',
+  'chevron-left': '<polyline points="15 18 9 12 15 6"></polyline>',
+  'lock': '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
+  'plus': '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>',
+  'dollar-sign': '<line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>',
+  'check': '<polyline points="20 6 9 12 4 10"></polyline>',
+  'x': '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+};
+
+function icon(name: string) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icons[name] ?? ''}</svg>`;
+}
+
+const memberInitial = member?.display_name?.charAt(0)?.toUpperCase() ?? 'U';
+const memberName = member?.display_name ?? '';
+const memberRole = isOwner ? 'Dueño' : 'Barbero';
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title} — Bladeo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <ClientRouter />
+
+  <!-- Feature #5 + #6: Apply theme and sidebar collapse before render to avoid flash -->
+  <script is:inline>
+    function _applyBladeoTheme() {
+      var themes = {
+        // ── Dark themes ────────────────────────────────────────────────────
+        'dark-azul':    { brand:'#2563eb', brandLight:'#3b82f6', surface:'#0a0a0f', elevated:'#12121a', overlay:'#1a1a25', border:'#2a2a3a', textPrimary:'#f0f0f5', textSecondary:'#8888a0' },
+        'dark-morado':  { brand:'#7c3aed', brandLight:'#8b5cf6', surface:'#0a0a0f', elevated:'#12121a', overlay:'#1a1a25', border:'#2a2a3a', textPrimary:'#f0f0f5', textSecondary:'#8888a0' },
+        'dark-verde':   { brand:'#16a34a', brandLight:'#22c55e', surface:'#0a0f0a', elevated:'#101a10', overlay:'#182518', border:'#253525', textPrimary:'#f0f5f0', textSecondary:'#80a080' },
+        'dark-naranja': { brand:'#ea580c', brandLight:'#f97316', surface:'#0f0a06', elevated:'#1a1208', overlay:'#251c0e', border:'#352a1a', textPrimary:'#f5f0e8', textSecondary:'#a09070' },
+        'dark-carbon':  { brand:'#6366f1', brandLight:'#818cf8', surface:'#060608', elevated:'#0f0f14', overlay:'#16161e', border:'#222230', textPrimary:'#e8e8f0', textSecondary:'#7070a0' },
+        'dark-slate':   { brand:'#38bdf8', brandLight:'#7dd3fc', surface:'#080c10', elevated:'#0f1520', overlay:'#162030', border:'#1e3040', textPrimary:'#dceeff', textSecondary:'#6080a0' },
+        // ── Light themes ───────────────────────────────────────────────────
+        'light-blanco': { brand:'#2563eb', brandLight:'#3b82f6', surface:'#f5f7ff', elevated:'#ffffff', overlay:'#eef1fb', border:'#d4d9f0', textPrimary:'#0f1428', textSecondary:'#5060a0' },
+        'light-gris':   { brand:'#7c3aed', brandLight:'#8b5cf6', surface:'#f2f2f5', elevated:'#ffffff', overlay:'#ebebf2', border:'#d0d0de', textPrimary:'#111118', textSecondary:'#606075' },
+        'light-crema':  { brand:'#b45309', brandLight:'#d97706', surface:'#fdf8f0', elevated:'#ffffff', overlay:'#f5ede0', border:'#e0d0b8', textPrimary:'#1a1008', textSecondary:'#806040' },
+        'light-menta':  { brand:'#0d9488', brandLight:'#14b8a6', surface:'#f0faf8', elevated:'#ffffff', overlay:'#e0f5f0', border:'#b8e0da', textPrimary:'#051a18', textSecondary:'#407070' },
+      };
+
+      var name = localStorage.getItem('bladeo_theme') || 'dark-azul';
+      // Migrate old theme names
+      var migrate = { 'azul':'dark-azul','morado':'dark-morado','verde':'dark-verde','naranja':'dark-naranja','rosa':'dark-azul','cian':'dark-azul' };
+      if (migrate[name]) name = migrate[name];
+
+      var t = themes[name] || themes['dark-azul'];
+      var r = document.documentElement;
+      r.style.setProperty('--color-brand', t.brand);
+      r.style.setProperty('--color-brand-light', t.brandLight);
+      r.style.setProperty('--color-surface', t.surface);
+      r.style.setProperty('--color-surface-elevated', t.elevated);
+      r.style.setProperty('--color-surface-overlay', t.overlay);
+      r.style.setProperty('--color-border', t.border);
+      r.style.setProperty('--color-text-primary', t.textPrimary);
+      r.style.setProperty('--color-text-secondary', t.textSecondary);
+      r.setAttribute('data-color-theme', name);
+
+      // Apply saved sidebar collapse state
+      var collapsed = localStorage.getItem('bladeo_sidebar_collapsed') === 'true';
+      if (collapsed) r.setAttribute('data-sidebar-collapsed', 'true');
+    }
+    _applyBladeoTheme();
+    document.addEventListener('astro:after-swap', _applyBladeoTheme);
+  </script>
+
+  <style>
+    /* Dynamic brand color CSS variables — defaults to azul */
+    :root {
+      --color-brand: #2563eb;
+      --color-brand-light: #3b82f6;
+    }
+
+    /* Sidebar collapse transitions */
+    #sidebar {
+      transition: width 200ms ease, transform 200ms ease;
+    }
+    #main-content {
+      transition: margin-left 200ms ease;
+    }
+
+    /* Collapsed sidebar styles */
+    html[data-sidebar-collapsed="true"] #sidebar {
+      width: 64px;
+    }
+    html[data-sidebar-collapsed="true"] #main-content {
+      margin-left: 64px;
+    }
+    @media (min-width: 1024px) {
+      html:not([data-sidebar-collapsed="true"]) #main-content {
+        margin-left: 260px;
+      }
+    }
+
+    /* Hide labels when collapsed */
+    html[data-sidebar-collapsed="true"] .sidebar-label { display: none; }
+    html[data-sidebar-collapsed="true"] .sidebar-logo-text { display: none; }
+    html[data-sidebar-collapsed="true"] .sidebar-user-info { display: none; }
+    html[data-sidebar-collapsed="true"] .sidebar-logout-btn { display: none; }
+    html[data-sidebar-collapsed="true"] .sidebar-nav-item {
+      justify-content: center;
+      padding-left: 0;
+      padding-right: 0;
+    }
+    html[data-sidebar-collapsed="true"] .sidebar-badge { display: none; }
+
+    /* Collapse icon rotation via CSS */
+    #collapse-icon { transition: transform 200ms ease; }
+    html[data-sidebar-collapsed="true"] #collapse-icon { transform: rotate(180deg); }
+
+    /* Light theme: force legible text on white/bright backgrounds */
+    [data-color-theme^="light"] .text-white { color: var(--color-text-primary) !important; }
+    [data-color-theme^="light"] #sidebar .text-white,
+    [data-color-theme^="light"] header .text-white,
+    [data-color-theme^="light"] #avatar-dropdown .text-white,
+    [data-color-theme^="light"] #notif-dropdown .text-white,
+    [data-color-theme^="light"] #quick-action-menu .text-white { color: var(--color-text-primary) !important; }
+    /* Keep white text on colored buttons */
+    [data-color-theme^="light"] .bg-\[var\(--color-brand\)\] .text-white,
+    [data-color-theme^="light"] button.bg-\[var\(--color-brand\)\],
+    [data-color-theme^="light"] a.bg-\[var\(--color-brand\)\] { color: #ffffff !important; }
+
+    /* Dropdown animations */
+    .dropdown-menu {
+      transform-origin: top right;
+      transition: opacity 150ms ease, transform 150ms ease;
+    }
+    .dropdown-menu.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.95);
+    }
+    .dropdown-menu:not(.hidden) {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    /* Notif dropdown */
+    #notif-dropdown {
+      transform-origin: top right;
+      transition: opacity 150ms ease, transform 150ms ease;
+    }
+    #notif-dropdown.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.95);
+    }
+    #notif-dropdown:not(.hidden) {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    /* Quick action menu */
+    #quick-action-menu {
+      transform-origin: top right;
+      transition: opacity 150ms ease, transform 150ms ease;
+    }
+    #quick-action-menu.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.95);
+    }
+    #quick-action-menu:not(.hidden) {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    /* Avatar dropdown */
+    #avatar-dropdown {
+      transform-origin: top right;
+      transition: opacity 150ms ease, transform 150ms ease;
+    }
+    #avatar-dropdown.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.95);
+    }
+    #avatar-dropdown:not(.hidden) {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    /* Expense modal overlay */
+    #expense-modal {
+      transition: opacity 150ms ease;
+    }
+    #expense-modal.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #expense-modal:not(.hidden) {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[var(--color-surface)] text-[var(--color-text-primary)] flex">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside
+    id="sidebar"
+    class="fixed top-0 left-0 h-full w-[260px] bg-[var(--color-surface-elevated)] border-r border-[var(--color-border)] flex flex-col z-40 -translate-x-full lg:translate-x-0 overflow-visible"
+  >
+    <!-- Logo -->
+    <div class="flex items-center gap-3 px-5 py-5 border-b border-[var(--color-border)] overflow-hidden flex-shrink-0">
+      <div class="w-9 h-9 bg-[var(--color-brand)] rounded-lg flex items-center justify-center flex-shrink-0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M6 3l2 4-2 4 2 4-2 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 3v18" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          <path d="M18 3l-2 4 2 4-2 4 2 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="overflow-hidden sidebar-logo-text">
+        <p class="font-bold text-white text-base leading-tight truncate">{barbershop?.name ?? 'Bladeo'}</p>
+        <p class="text-[var(--color-text-secondary)] text-xs truncate">{tier === 'basic' ? 'Plan Básico' : tier === 'pro' ? 'Plan Pro' : 'Plan Elite'}</p>
+      </div>
+    </div>
+
+    <!-- Nav items -->
+    <nav class="flex-1 overflow-y-auto py-3 px-3">
+      {navItems.map(item => {
+        const locked = isLocked(item);
+        const active = isActive(item.href);
+        const badge = getTierBadge(item);
+
+        if (item.ownerOnly && !isOwner) return null;
+
+        return (
+          <Fragment>
+            <a
+              href={locked ? '#' : item.href}
+              class={[
+                'sidebar-nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-sm font-medium transition-colors group relative',
+                active
+                  ? 'bg-[var(--color-brand)] text-white'
+                  : locked
+                  ? 'text-[var(--color-text-secondary)] cursor-not-allowed'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-overlay)] hover:text-white'
+              ].filter(Boolean).join(' ')}
+              title={item.label}
+            >
+              <span class="flex-shrink-0" set:html={icon(item.icon)} />
+              <span class="truncate sidebar-label">{item.label}</span>
+              {badge && (
+                <span class="ml-auto flex-shrink-0 flex items-center gap-1 sidebar-badge">
+                  <span set:html={icon('lock')} class="w-3.5 h-3.5 opacity-60" />
+                  <span class={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge === 'Elite' ? 'bg-purple-500/20 text-purple-400' : 'bg-[var(--color-brand)]/20 text-[var(--color-brand-light)]'}`}>
+                    {badge}
+                  </span>
+                </span>
+              )}
+            </a>
+            {item.href === '/app/accounting' && isAccountingActive && !locked && (
+              <div class="ml-4 mt-0.5 mb-1 sidebar-submenu">
+                <a
+                  href="/app/accounting/reports"
+                  class={[
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                    currentPath === '/app/accounting/reports'
+                      ? 'bg-[var(--color-brand)]/20 text-[var(--color-brand-light)]'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-overlay)] hover:text-white'
+                  ].join(' ')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                  <span class="sidebar-label">Reportes</span>
+                </a>
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
+    </nav>
+
+    <!-- Feature #6: Collapse toggle — small edge button -->
+    <button
+      id="sidebar-collapse-btn"
+      onclick="toggleSidebarCollapse()"
+      class="absolute right-[-13px] top-[72px] z-50 w-[26px] h-[26px] rounded-full bg-[var(--color-surface-elevated)] border border-[var(--color-border)] items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-brand)] transition-all shadow-sm hidden lg:flex"
+      title="Colapsar sidebar"
+    >
+      <svg id="collapse-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+
+    <!-- Bottom: user info -->
+    <div class="px-3 py-4 border-t border-[var(--color-border)] flex-shrink-0">
+      <div class="flex items-center gap-3 px-2 mb-3">
+        <div class="w-9 h-9 rounded-full bg-[var(--color-brand)]/20 flex items-center justify-center flex-shrink-0 text-sm font-bold text-[var(--color-brand-light)]">
+          {memberInitial}
+        </div>
+        <div class="overflow-hidden sidebar-user-info">
+          <p class="text-sm font-medium text-white truncate">{memberName}</p>
+          <span class={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${isOwner ? 'bg-[var(--color-brand)]/20 text-[var(--color-brand-light)]' : 'bg-green-500/20 text-green-400'}`}>
+            {memberRole}
+          </span>
+        </div>
+      </div>
+      <form method="POST" action="/api/auth/logout" class="sidebar-logout-btn">
+        <button
+          type="submit"
+          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-overlay)] hover:text-white transition-colors"
+        >
+          <span set:html={icon('log-out')} />
+          Cerrar sesión
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- Sidebar overlay (mobile) -->
+  <div
+    id="sidebar-overlay"
+    class="fixed inset-0 bg-black/60 z-30 hidden lg:hidden"
+    onclick="closeSidebar()"
+  ></div>
+
+  <!-- ===================== MAIN CONTENT ===================== -->
+  <div id="main-content" class="flex-1 flex flex-col min-h-screen lg:ml-[260px]">
+
+    <!-- ===================== TOPBAR ===================== -->
+    <header class="sticky top-0 z-20 flex items-center justify-between h-16 px-4 sm:px-6 bg-[var(--color-surface-elevated)]/80 backdrop-blur border-b border-[var(--color-border)]">
+      <!-- Mobile hamburger -->
+      <button
+        class="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors"
+        onclick="openSidebar()"
+        aria-label="Abrir menú"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+
+      <div class="hidden lg:block">
+        <h1 class="text-base font-semibold text-white">{title}</h1>
+      </div>
+
+      <!-- Right: quick-action + notifications + avatar -->
+      <div class="flex items-center gap-2 ml-auto relative">
+
+        <!-- Feature #2: Quick Action + Button -->
+        <div class="relative">
+          <button
+            id="quick-action-btn"
+            class="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors text-[var(--color-text-secondary)] hover:text-white"
+            aria-label="Acción rápida"
+            onclick="toggleQuickAction(event)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+
+          <!-- Quick action dropdown -->
+          <div
+            id="quick-action-menu"
+            class="hidden absolute right-0 top-11 w-52 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-xl shadow-2xl z-50 py-1.5"
+          >
+            <a
+              href="/app/agenda"
+              class="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-white transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              Nueva cita
+            </a>
+            <button
+              onclick="openExpenseModal(); closeQuickAction();"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-white transition-colors text-left"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+              </svg>
+              Registrar gasto
+            </button>
+            <a
+              href="/app/pos"
+              class="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-white transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+              </svg>
+              Nueva venta
+            </a>
+          </div>
+        </div>
+
+        <!-- Feature #1: Notification Bell -->
+        <div class="relative">
+          <button
+            id="notif-btn"
+            class="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors text-[var(--color-text-secondary)] hover:text-white relative"
+            aria-label="Notificaciones"
+            onclick="toggleNotifDropdown(event)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <!-- Badge -->
+            <span
+              id="notif-badge"
+              class="hidden absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none"
+            >0</span>
+          </button>
+
+          <!-- Notification dropdown -->
+          <div
+            id="notif-dropdown"
+            class="hidden absolute right-0 top-11 w-80 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-xl shadow-2xl z-50 overflow-hidden"
+          >
+            <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+              <span class="text-sm font-semibold text-white">Notificaciones</span>
+              <button
+                onclick="markAllNotifsRead()"
+                class="text-[11px] text-[var(--color-brand-light)] hover:underline font-medium"
+              >
+                Marcar todo como leído
+              </button>
+            </div>
+            <div id="notif-list" class="max-h-80 overflow-y-auto divide-y divide-[var(--color-border)]">
+              <p class="text-[var(--color-text-secondary)] text-sm text-center py-6">Cargando...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature #4: Avatar with dropdown -->
+        <div class="relative">
+          <button
+            id="avatar-btn"
+            class="w-9 h-9 rounded-full bg-[var(--color-brand)]/20 flex items-center justify-center text-sm font-bold text-[var(--color-brand-light)] cursor-pointer hover:ring-2 hover:ring-[var(--color-brand)] transition-all"
+            onclick="toggleAvatarDropdown(event)"
+            aria-label="Menú de usuario"
+          >
+            {memberInitial}
+          </button>
+
+          <!-- Avatar dropdown -->
+          <div
+            id="avatar-dropdown"
+            class="hidden absolute right-0 top-11 w-64 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-xl shadow-2xl z-50 overflow-hidden"
+          >
+            <!-- Header: user info -->
+            <div class="px-4 py-3 border-b border-[var(--color-border)]">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-full bg-[var(--color-brand)]/20 flex items-center justify-center text-sm font-bold text-[var(--color-brand-light)] flex-shrink-0">
+                  {memberInitial}
+                </div>
+                <div class="overflow-hidden">
+                  <p class="text-sm font-semibold text-white truncate">{memberName}</p>
+                  <span class={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${isOwner ? 'bg-[var(--color-brand)]/20 text-[var(--color-brand-light)]' : 'bg-green-500/20 text-green-400'}`}>
+                    {memberRole}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Links -->
+            <div class="py-1">
+              <a
+                href="/app/landing"
+                class="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-white transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                Mi Landing
+              </a>
+              <a
+                href="/app/settings"
+                class="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-white transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                Configuración
+              </a>
+            </div>
+
+            <!-- Logout -->
+            <div class="border-t border-[var(--color-border)] py-1">
+              <form method="POST" action="/api/auth/logout">
+                <button
+                  type="submit"
+                  class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  Cerrar sesión
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="flex-1 p-4 sm:p-6 lg:p-8">
+      <slot />
+    </main>
+  </div>
+
+  <!-- Mobile bottom nav -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 flex lg:hidden bg-[var(--color-surface-elevated)] border-t border-[var(--color-border)]">
+    {[
+      { label: 'Dashboard', href: '/app', icon: 'home' },
+      { label: 'Agenda', href: '/app/agenda', icon: 'calendar' },
+      { label: 'POS', href: '/app/pos', icon: 'shopping-cart' },
+      { label: 'Clientes', href: '/app/clients', icon: 'users' },
+    ].map(item => (
+      <a
+        href={item.href}
+        class={[
+          'flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors',
+          isActive(item.href) ? 'text-[var(--color-brand-light)]' : 'text-[var(--color-text-secondary)]'
+        ].join(' ')}
+      >
+        <span set:html={icon(item.icon)} />
+        {item.label}
+      </a>
+    ))}
+    <button
+      class="flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium text-[var(--color-text-secondary)]"
+      onclick="openSidebar()"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+      Más
+    </button>
+  </nav>
+
+  <!-- ===================== EXPENSE MODAL (Feature #2) ===================== -->
+  <div
+    id="expense-modal"
+    class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60"
+    onclick="handleExpenseModalBackdrop(event)"
+  >
+    <div class="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-2xl w-full max-w-md shadow-2xl" id="expense-modal-inner">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+        <h2 class="text-base font-semibold text-white">Registrar gasto</h2>
+        <button
+          onclick="closeExpenseModal()"
+          class="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-surface-elevated)] transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <form id="expense-form" class="px-6 py-5 space-y-4" onsubmit="submitExpense(event)">
+        <div>
+          <label class="block text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-1.5">Categoría</label>
+          <select
+            name="category"
+            required
+            class="w-full bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--color-brand)] transition-colors appearance-none"
+          >
+            <option value="" disabled selected>Seleccionar categoría</option>
+            <option value="Arriendo">Arriendo</option>
+            <option value="Servicios públicos">Servicios públicos</option>
+            <option value="Insumos">Insumos</option>
+            <option value="Salarios">Salarios</option>
+            <option value="Publicidad">Publicidad</option>
+            <option value="Mantenimiento">Mantenimiento</option>
+            <option value="Equipos">Equipos</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-1.5">Descripción</label>
+          <input
+            type="text"
+            name="description"
+            placeholder="Ej. Pago de arriendo mensual"
+            class="w-full bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#8888a0] focus:outline-none focus:border-[var(--color-brand)] transition-colors"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-1.5">Monto</label>
+          <input
+            type="number"
+            name="amount"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            required
+            class="w-full bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#8888a0] focus:outline-none focus:border-[var(--color-brand)] transition-colors"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-1.5">Fecha</label>
+          <input
+            type="date"
+            name="date"
+            id="expense-date"
+            required
+            class="w-full bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--color-brand)] transition-colors"
+          />
+        </div>
+        <div id="expense-error" class="hidden text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2"></div>
+        <div class="flex gap-3 pt-1">
+          <button
+            type="button"
+            onclick="closeExpenseModal()"
+            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-elevated)] hover:bg-[var(--color-surface-elevated)] transition-colors border border-[var(--color-border)]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            id="expense-submit-btn"
+            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-[var(--color-brand)] hover:opacity-90 transition-opacity"
+          >
+            Guardar gasto
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== BOOKING TOAST ===================== -->
+  <div id="booking-toast" style="display:none;position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9998;max-width:24rem;width:calc(100% - 2rem);">
+    <div id="booking-toast-inner" style="background:var(--color-surface-elevated);border:1px solid var(--color-brand);border-radius:0.875rem;box-shadow:0 8px 40px rgba(0,0,0,0.4);overflow:hidden;opacity:0;transform:translateY(20px);transition:opacity 250ms ease,transform 250ms ease;">
+      <div style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem 0.875rem 0.75rem;">
+        <div style="width:2.25rem;height:2.25rem;border-radius:0.625rem;background:color-mix(in srgb,var(--color-brand) 20%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--color-brand-light);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <p style="margin:0;font-size:0.8125rem;font-weight:700;color:var(--color-text-primary);letter-spacing:0.01em;">Nueva reserva</p>
+          <p id="booking-toast-body" style="margin:0.2rem 0 0;font-size:0.8125rem;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></p>
+        </div>
+        <button onclick="dismissBookingToast()" style="flex-shrink:0;width:1.75rem;height:1.75rem;border:1px solid var(--color-border);background:var(--color-surface-overlay);border-radius:0.375rem;cursor:pointer;color:var(--color-text-secondary);font-size:1.125rem;line-height:1;display:flex;align-items:center;justify-content:center;" title="Cerrar">×</button>
+      </div>
+      <div id="booking-toast-bar" style="height:2px;background:var(--color-brand);transform-origin:left;transform:scaleX(1);"></div>
+    </div>
+  </div>
+
+  <!-- ===================== ALL SCRIPTS ===================== -->
+  <script is:inline>
+    // ── Sidebar open/close (mobile) ──────────────────────────────────────────
+    function openSidebar() {
+      document.getElementById('sidebar').classList.remove('-translate-x-full');
+      document.getElementById('sidebar-overlay').classList.remove('hidden');
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.add('-translate-x-full');
+      document.getElementById('sidebar-overlay').classList.add('hidden');
+    }
+
+    // ── Feature #6: Sidebar collapse ─────────────────────────────────────────
+    function toggleSidebarCollapse() {
+      var isCollapsed = document.documentElement.getAttribute('data-sidebar-collapsed') === 'true';
+      if (isCollapsed) {
+        document.documentElement.removeAttribute('data-sidebar-collapsed');
+        localStorage.setItem('bladeo_sidebar_collapsed', 'false');
+      } else {
+        document.documentElement.setAttribute('data-sidebar-collapsed', 'true');
+        localStorage.setItem('bladeo_sidebar_collapsed', 'true');
+      }
+    }
+
+    // Set correct icon for collapse button on load
+    (function() {
+      // Collapse icon rotation is handled by CSS transition on #collapse-icon
+    })();
+
+    // ── Close all dropdowns helper ────────────────────────────────────────────
+    function closeAllDropdowns() {
+      var ids = ['notif-dropdown', 'quick-action-menu', 'avatar-dropdown'];
+      ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
+    }
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', function(e) {
+      var notifBtn = document.getElementById('notif-btn');
+      var notifDd = document.getElementById('notif-dropdown');
+      var qaBtn   = document.getElementById('quick-action-btn');
+      var qaDd    = document.getElementById('quick-action-menu');
+      var avatBtn = document.getElementById('avatar-btn');
+      var avatDd  = document.getElementById('avatar-dropdown');
+
+      if (notifDd && !notifDd.classList.contains('hidden')) {
+        if (!notifBtn.contains(e.target) && !notifDd.contains(e.target)) {
+          notifDd.classList.add('hidden');
+        }
+      }
+      if (qaDd && !qaDd.classList.contains('hidden')) {
+        if (!qaBtn.contains(e.target) && !qaDd.contains(e.target)) {
+          qaDd.classList.add('hidden');
+        }
+      }
+      if (avatDd && !avatDd.classList.contains('hidden')) {
+        if (!avatBtn.contains(e.target) && !avatDd.contains(e.target)) {
+          avatDd.classList.add('hidden');
+        }
+      }
+    });
+
+    // ── Feature #1: Notifications ─────────────────────────────────────────────
+    var _notifications = [];
+
+    function toggleNotifDropdown(e) {
+      e.stopPropagation();
+      var dd = document.getElementById('notif-dropdown');
+      var qadd = document.getElementById('quick-action-menu');
+      var avdd = document.getElementById('avatar-dropdown');
+      if (qadd) qadd.classList.add('hidden');
+      if (avdd) avdd.classList.add('hidden');
+      dd.classList.toggle('hidden');
+    }
+
+    function markAllNotifsRead() {
+      var now = new Date().toISOString();
+      localStorage.setItem('bladeo_notif_read', now);
+      updateNotifBadge();
+      renderNotifList();
+    }
+
+    function timeAgo(dateStr) {
+      var diff = Date.now() - new Date(dateStr).getTime();
+      var mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'ahora';
+      if (mins < 60) return 'hace ' + mins + ' min';
+      var hrs = Math.floor(mins / 60);
+      if (hrs < 24) return 'hace ' + hrs + 'h';
+      var days = Math.floor(hrs / 24);
+      return 'hace ' + days + 'd';
+    }
+
+    function getNotifTypeIcon(type) {
+      if (type === 'appointment' || type === 'booking') {
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+      }
+      if (type === 'payment') {
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>';
+      }
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>';
+    }
+
+    function renderNotifList() {
+      var container = document.getElementById('notif-list');
+      if (!container) return;
+      var lastRead = localStorage.getItem('bladeo_notif_read');
+      var lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
+
+      if (_notifications.length === 0) {
+        container.innerHTML = '<p class="text-[var(--color-text-secondary)] text-sm text-center py-6">Sin notificaciones</p>';
+        return;
+      }
+
+      var shown = _notifications.slice(0, 8);
+      container.innerHTML = shown.map(function(n) {
+        var isNew = lastReadTime === 0 || new Date(n.created_at || n.time || n.timestamp || '').getTime() > lastReadTime;
+        return '<div class="flex items-start gap-3 px-4 py-3 hover:bg-[var(--color-surface-elevated)] transition-colors">'
+          + '<div class="flex-shrink-0 mt-0.5 w-6 h-6 rounded-full bg-[var(--color-brand)]/20 text-[var(--color-brand-light)] flex items-center justify-center">'
+          + getNotifTypeIcon(n.type)
+          + '</div>'
+          + '<div class="flex-1 min-w-0">'
+          + '<div class="flex items-start justify-between gap-2">'
+          + '<p class="text-sm font-medium text-white leading-tight">' + (n.title || 'Notificación') + '</p>'
+          + (isNew ? '<span class="flex-shrink-0 w-2 h-2 rounded-full bg-red-500 mt-1"></span>' : '')
+          + '</div>'
+          + (n.body ? '<p class="text-xs text-[var(--color-text-secondary)] mt-0.5 leading-relaxed">' + n.body + '</p>' : '')
+          + '<p class="text-[11px] text-[#555568] mt-1">' + timeAgo(n.created_at || n.time || n.timestamp || '') + '</p>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function updateNotifBadge() {
+      var badge = document.getElementById('notif-badge');
+      if (!badge) return;
+      var lastRead = localStorage.getItem('bladeo_notif_read');
+      var lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
+      var unread = _notifications.filter(function(n) {
+        var t = new Date(n.created_at || n.time || n.timestamp || '').getTime();
+        return t > lastReadTime;
+      });
+      if (unread.length > 0) {
+        badge.textContent = unread.length > 99 ? '99+' : String(unread.length);
+        badge.classList.remove('hidden');
+        badge.classList.add('flex');
+      } else {
+        badge.classList.add('hidden');
+        badge.classList.remove('flex');
+      }
+    }
+
+    // Persist across ClientRouter navigations using sessionStorage
+    var _knownNotifIds = null;
+    try {
+      var _stored = sessionStorage.getItem('_bladeo_notif_ids');
+      if (_stored) _knownNotifIds = JSON.parse(_stored);
+    } catch(e) {}
+
+    function fetchNotifications() {
+      fetch('/api/notifications')
+        .then(function(r) { return r.ok ? r.json() : []; })
+        .then(function(data) {
+          _notifications = Array.isArray(data) ? data : (data.notifications || []);
+          updateNotifBadge();
+
+          // Detect newly arrived notifications and trigger toast + sound
+          if (_knownNotifIds !== null) {
+            var newOnes = _notifications.filter(function(n) {
+              return _knownNotifIds.indexOf(n.id) === -1;
+            });
+            if (newOnes.length > 0) {
+              var newest = newOnes[0]; // API returns DESC order, so index 0 is newest
+              showBookingToast({
+                clientName: newest.body ? newest.body.split(' — ')[0] : newest.title,
+                time: newest.time,
+              });
+              playNotifSound();
+            }
+          }
+          _knownNotifIds = _notifications.map(function(n) { return n.id; });
+          try { sessionStorage.setItem('_bladeo_notif_ids', JSON.stringify(_knownNotifIds)); } catch(e) {}
+
+          // Re-render if dropdown is open
+          var dd = document.getElementById('notif-dropdown');
+          if (dd && !dd.classList.contains('hidden')) {
+            renderNotifList();
+          }
+        })
+        .catch(function() {});
+    }
+
+    // ── Notification sound ───────────────────────────────────────────────────
+    // Keep a single AudioContext — browsers block new ones without a user gesture
+    var _audioCtx = null;
+    document.addEventListener('click', function() {
+      try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        else if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(function(){});
+      } catch(e) {}
+    }, { passive: true });
+
+    function _playTone(ctx, freq, startTime, duration) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.3, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    }
+
+    function playNotifSound() {
+      try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var ctx = _audioCtx;
+        var doPlay = function() {
+          var t = ctx.currentTime;
+          _playTone(ctx, 880, t, 0.25);         // A5 — first ding
+          _playTone(ctx, 1174.66, t + 0.18, 0.3); // D6 — second ding (higher)
+        };
+        if (ctx.state === 'suspended') ctx.resume().then(doPlay).catch(function(){});
+        else doPlay();
+      } catch(e) {}
+    }
+
+    // ── Booking toast (top-left banner) ─────────────────────────────────────
+    function showBookingToast(data) {
+      var toast = document.getElementById('booking-toast');
+      var inner = document.getElementById('booking-toast-inner');
+      var body  = document.getElementById('booking-toast-body');
+      var bar   = document.getElementById('booking-toast-bar');
+      if (!toast || !inner || !body) return;
+
+      body.textContent = (data.clientName || 'Cliente') + (data.time ? ' · ' + data.time : '');
+
+      // Reset bar without transition, then animate
+      if (bar) { bar.style.transition = 'none'; bar.style.transform = 'scaleX(1)'; }
+
+      toast.style.display = 'block';
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          inner.style.opacity = '1';
+          inner.style.transform = 'translateY(0px)';
+          if (bar) {
+            bar.style.transition = 'transform 8s linear';
+            bar.style.transform = 'scaleX(0)';
+          }
+        });
+      });
+
+      clearTimeout(window._bookingToastTimer);
+      window._bookingToastTimer = setTimeout(dismissBookingToast, 8000);
+    }
+
+    function dismissBookingToast() {
+      clearTimeout(window._bookingToastTimer);
+      var inner = document.getElementById('booking-toast-inner');
+      var toast = document.getElementById('booking-toast');
+      if (!inner) return;
+      inner.style.opacity = '0';
+      inner.style.transform = 'translateY(20px)';
+      setTimeout(function() { if (toast) toast.style.display = 'none'; }, 260);
+    }
+
+    // Expose for realtime module
+    window._showBookingToast = showBookingToast;
+    window._dismissBookingToast = dismissBookingToast;
+
+    // fetchNotifications now handles toast + sound internally
+    window._fetchNotificationsAndSound = fetchNotifications;
+
+    // Fallback polling (30s) — realtime module replaces this if available
+    window.addEventListener('load', function() {
+      fetchNotifications();
+      window._notifPollingInterval = setInterval(fetchNotifications, 10000);
+    });
+
+    // Render list when dropdown opens
+    var origToggleNotif = window.toggleNotifDropdown;
+    window.toggleNotifDropdown = function(e) {
+      origToggleNotif(e);
+      var dd = document.getElementById('notif-dropdown');
+      if (dd && !dd.classList.contains('hidden')) {
+        renderNotifList();
+      }
+    };
+
+    // ── Feature #2: Quick action + Expense modal ──────────────────────────────
+    function toggleQuickAction(e) {
+      e.stopPropagation();
+      var dd = document.getElementById('quick-action-menu');
+      var ndd = document.getElementById('notif-dropdown');
+      var avdd = document.getElementById('avatar-dropdown');
+      if (ndd) ndd.classList.add('hidden');
+      if (avdd) avdd.classList.add('hidden');
+      dd.classList.toggle('hidden');
+    }
+
+    function closeQuickAction() {
+      var dd = document.getElementById('quick-action-menu');
+      if (dd) dd.classList.add('hidden');
+    }
+
+    function openExpenseModal() {
+      var modal = document.getElementById('expense-modal');
+      // Set default date to today
+      var dateInput = document.getElementById('expense-date');
+      if (dateInput) {
+        var today = new Date();
+        var y = today.getFullYear();
+        var m = String(today.getMonth() + 1).padStart(2, '0');
+        var d = String(today.getDate()).padStart(2, '0');
+        dateInput.value = y + '-' + m + '-' + d;
+      }
+      // Clear previous errors and reset form
+      var errEl = document.getElementById('expense-error');
+      if (errEl) errEl.classList.add('hidden');
+      var form = document.getElementById('expense-form');
+      if (form) form.reset();
+      // Re-set date after reset
+      if (dateInput) {
+        var today2 = new Date();
+        var y2 = today2.getFullYear();
+        var m2 = String(today2.getMonth() + 1).padStart(2, '0');
+        var d2 = String(today2.getDate()).padStart(2, '0');
+        dateInput.value = y2 + '-' + m2 + '-' + d2;
+      }
+      modal.classList.remove('hidden');
+    }
+
+    function closeExpenseModal() {
+      var modal = document.getElementById('expense-modal');
+      modal.classList.add('hidden');
+    }
+
+    function handleExpenseModalBackdrop(e) {
+      if (e.target === document.getElementById('expense-modal')) {
+        closeExpenseModal();
+      }
+    }
+
+    function submitExpense(e) {
+      e.preventDefault();
+      var form = e.target;
+      var btn = document.getElementById('expense-submit-btn');
+      var errEl = document.getElementById('expense-error');
+
+      var data = {
+        category:    form.category.value,
+        description: form.description.value,
+        amount:      parseFloat(form.amount.value),
+        date:        form.date.value,
+      };
+
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      if (errEl) errEl.classList.add('hidden');
+
+      fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+        .then(function(r) {
+          return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+        })
+        .then(function(res) {
+          if (res.ok) {
+            closeExpenseModal();
+          } else {
+            if (errEl) {
+              errEl.textContent = res.data.error || 'Error al guardar el gasto.';
+              errEl.classList.remove('hidden');
+            }
+          }
+        })
+        .catch(function() {
+          if (errEl) {
+            errEl.textContent = 'Error de conexión. Intenta de nuevo.';
+            errEl.classList.remove('hidden');
+          }
+        })
+        .finally(function() {
+          btn.disabled = false;
+          btn.textContent = 'Guardar gasto';
+        });
+    }
+
+    // ── Feature #4: Avatar dropdown ───────────────────────────────────────────
+    function toggleAvatarDropdown(e) {
+      e.stopPropagation();
+      var dd = document.getElementById('avatar-dropdown');
+      var ndd = document.getElementById('notif-dropdown');
+      var qadd = document.getElementById('quick-action-menu');
+      if (ndd) ndd.classList.add('hidden');
+      if (qadd) qadd.classList.add('hidden');
+      dd.classList.toggle('hidden');
+    }
+
+    // ── Feature #5: Color themes ──────────────────────────────────────────────
+    var _colorThemes = {
+      'dark-azul':    { brand:'#2563eb', brandLight:'#3b82f6', surface:'#0a0a0f', elevated:'#12121a', overlay:'#1a1a25', border:'#2a2a3a', textPrimary:'#f0f0f5', textSecondary:'#8888a0' },
+      'dark-morado':  { brand:'#7c3aed', brandLight:'#8b5cf6', surface:'#0a0a0f', elevated:'#12121a', overlay:'#1a1a25', border:'#2a2a3a', textPrimary:'#f0f0f5', textSecondary:'#8888a0' },
+      'dark-verde':   { brand:'#16a34a', brandLight:'#22c55e', surface:'#0a0f0a', elevated:'#101a10', overlay:'#182518', border:'#253525', textPrimary:'#f0f5f0', textSecondary:'#80a080' },
+      'dark-naranja': { brand:'#ea580c', brandLight:'#f97316', surface:'#0f0a06', elevated:'#1a1208', overlay:'#251c0e', border:'#352a1a', textPrimary:'#f5f0e8', textSecondary:'#a09070' },
+      'dark-carbon':  { brand:'#6366f1', brandLight:'#818cf8', surface:'#060608', elevated:'#0f0f14', overlay:'#16161e', border:'#222230', textPrimary:'#e8e8f0', textSecondary:'#7070a0' },
+      'dark-slate':   { brand:'#38bdf8', brandLight:'#7dd3fc', surface:'#080c10', elevated:'#0f1520', overlay:'#162030', border:'#1e3040', textPrimary:'#dceeff', textSecondary:'#6080a0' },
+      'light-blanco': { brand:'#2563eb', brandLight:'#3b82f6', surface:'#f5f7ff', elevated:'#ffffff', overlay:'#eef1fb', border:'#d4d9f0', textPrimary:'#0f1428', textSecondary:'#5060a0' },
+      'light-gris':   { brand:'#7c3aed', brandLight:'#8b5cf6', surface:'#f2f2f5', elevated:'#ffffff', overlay:'#ebebf2', border:'#d0d0de', textPrimary:'#111118', textSecondary:'#606075' },
+      'light-crema':  { brand:'#b45309', brandLight:'#d97706', surface:'#fdf8f0', elevated:'#ffffff', overlay:'#f5ede0', border:'#e0d0b8', textPrimary:'#1a1008', textSecondary:'#806040' },
+      'light-menta':  { brand:'#0d9488', brandLight:'#14b8a6', surface:'#f0faf8', elevated:'#ffffff', overlay:'#e0f5f0', border:'#b8e0da', textPrimary:'#051a18', textSecondary:'#407070' },
+    };
+
+    function applyTheme(name) {
+      var t = _colorThemes[name];
+      if (!t) return;
+      var r = document.documentElement;
+      r.style.setProperty('--color-brand', t.brand);
+      r.style.setProperty('--color-brand-light', t.brandLight);
+      r.style.setProperty('--color-surface', t.surface);
+      r.style.setProperty('--color-surface-elevated', t.elevated);
+      r.style.setProperty('--color-surface-overlay', t.overlay);
+      r.style.setProperty('--color-border', t.border);
+      r.style.setProperty('--color-text-primary', t.textPrimary);
+      r.style.setProperty('--color-text-secondary', t.textSecondary);
+      r.setAttribute('data-color-theme', name);
+      localStorage.setItem('bladeo_theme', name);
+      updateThemeButtons(name);
+    }
+
+    // applyTheme is available globally — theme buttons live in settings.astro
+  </script>
+
+  <!-- Navigation progress bar -->
+  <div id="nav-progress" style="position:fixed;top:0;left:0;right:0;height:2px;background:var(--color-brand);z-index:9999;transform:scaleX(0);transform-origin:left;transition:transform 200ms ease,opacity 300ms ease;opacity:0;pointer-events:none;"></div>
+  <script is:inline>
+    document.addEventListener('astro:before-preparation', function() {
+      var bar = document.getElementById('nav-progress');
+      if (!bar) return;
+      bar.style.opacity = '1';
+      bar.style.transform = 'scaleX(0.4)';
+      bar.style.transition = 'transform 2s ease,opacity 300ms ease';
+    });
+    document.addEventListener('astro:after-preparation', function() {
+      var bar = document.getElementById('nav-progress');
+      if (!bar) return;
+      bar.style.transform = 'scaleX(0.8)';
+    });
+    document.addEventListener('astro:page-load', function() {
+      var bar = document.getElementById('nav-progress');
+      if (!bar) return;
+      bar.style.transition = 'transform 150ms ease,opacity 300ms ease';
+      bar.style.transform = 'scaleX(1)';
+      setTimeout(function() {
+        bar.style.opacity = '0';
+        setTimeout(function() { bar.style.transform = 'scaleX(0)'; }, 300);
+      }, 150);
+    });
+  </script>
+
+  <!-- Web Push subscription -->
+  <script is:inline define:vars={{ vapidKey: import.meta.env.PUBLIC_VAPID_KEY }}>
+    function _urlBase64ToUint8Array(base64String) {
+      var padding = '='.repeat((4 - base64String.length % 4) % 4);
+      var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      var rawData = atob(base64);
+      var outputArray = new Uint8Array(rawData.length);
+      for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+      return outputArray;
+    }
+
+    async function _registerPush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      try {
+        var reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+        await navigator.serviceWorker.ready;
+
+        var permission = Notification.permission;
+        if (permission === 'default') {
+          permission = await Notification.requestPermission();
+        }
+        if (permission !== 'granted') return;
+
+        // Re-use existing subscription or create a new one
+        var sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: _urlBase64ToUint8Array(vapidKey),
+          });
+        }
+
+        // Only call the server if this endpoint isn't already confirmed saved
+        var savedEp = localStorage.getItem('_bladeo_push_ep');
+        if (savedEp !== sub.endpoint) {
+          var res = await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub }),
+          });
+          if (res.ok) {
+            localStorage.setItem('_bladeo_push_ep', sub.endpoint);
+          }
+        }
+      } catch (e) {
+        // Push setup is non-critical — fail silently
+      }
+    }
+
+    // Run on every load/navigation — localStorage dedup prevents unnecessary DB calls
+    window.addEventListener('load', function() { setTimeout(_registerPush, 1000); });
+    document.addEventListener('astro:page-load', function() { setTimeout(_registerPush, 1000); });
+  </script>
+
+  <!-- Realtime notifications via Supabase -->
+  <div id="realtime-config" data-barbershop-id={barbershop?.id ?? ''} class="hidden"></div>
+  <script>
+    import { createClient } from '@supabase/supabase-js';
+
+    const configEl = document.getElementById('realtime-config');
+    const barbershopId = (configEl as HTMLElement | null)?.dataset?.barbershopId ?? '';
+
+    if (barbershopId) {
+      const sb = createClient(
+        import.meta.env.PUBLIC_SUPABASE_URL,
+        import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+        { realtime: { params: { eventsPerSecond: 2 } } }
+      );
+
+      let prevCount = 0;
+
+      sb.channel('notif-channel')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'appointments',
+          filter: `barbershop_id=eq.${barbershopId}`,
+        }, () => {
+          // fetchNotifications detects new items and triggers toast + sound
+          if ((window as any)._fetchNotificationsAndSound) {
+            (window as any)._fetchNotificationsAndSound();
+          }
+          // Stop fallback polling — realtime is active
+          if ((window as any)._notifPollingInterval) {
+            clearInterval((window as any)._notifPollingInterval);
+            (window as any)._notifPollingInterval = null;
+          }
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'appointments',
+          filter: `barbershop_id=eq.${barbershopId}`,
+        }, () => {
+          if ((window as any)._fetchNotificationsAndSound) {
+            (window as any)._fetchNotificationsAndSound();
+          }
+        })
+        .subscribe();
+    }
+  </script>
+</body>
+</html>

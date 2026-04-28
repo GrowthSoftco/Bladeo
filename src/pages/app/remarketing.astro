@@ -1,0 +1,926 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { createAdminClient } from '@/lib/supabase';
+import type { RemarketingRule } from '@/lib/types';
+
+const barbershop = Astro.locals.barbershop;
+const admin = createAdminClient();
+
+// Check Twilio config
+const { data: shopData } = await admin.from('barbershops').select('payment_details').eq('id', barbershop.id).single();
+const twilioConfig = (shopData?.payment_details as any)?._twilio ?? null;
+const twilioConfigured = !!(twilioConfig?.account_sid && twilioConfig?.auth_token && twilioConfig?.whatsapp_from);
+
+// Parse template helper
+function parseTemplate(tpl: string): { text: string; media_url: string | null } {
+  try { const p = JSON.parse(tpl); return { text: p.text || tpl, media_url: p.media_url || null }; }
+  catch { return { text: tpl, media_url: null }; }
+}
+
+// Stats + rules (only if configured)
+let rules: RemarketingRule[] = [];
+let inactiveClients = 0, totalClients = 0, sentTotal = 0, recentLogs: any[] = [];
+
+if (twilioConfigured) {
+  const { data: r } = await admin.from('remarketing_rules').select('*').eq('barbershop_id', barbershop.id).order('created_at', { ascending: false });
+  rules = r ?? [];
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const [{ count: ic }, { count: tc }, { count: st }, { data: logs }] = await Promise.all([
+    admin.from('clients').select('*', { count: 'exact', head: true }).eq('barbershop_id', barbershop.id).or(`last_visit_at.lt.${thirtyDaysAgo},last_visit_at.is.null`),
+    admin.from('clients').select('*', { count: 'exact', head: true }).eq('barbershop_id', barbershop.id),
+    admin.from('remarketing_log').select('*', { count: 'exact', head: true }).eq('barbershop_id', barbershop.id).eq('status', 'sent'),
+    admin.from('remarketing_log').select('*, clients(name, phone), remarketing_rules(name)').eq('barbershop_id', barbershop.id).order('created_at', { ascending: false }).limit(15),
+  ]);
+  inactiveClients = ic ?? 0;
+  totalClients = tc ?? 0;
+  sentTotal = st ?? 0;
+  recentLogs = logs ?? [];
+}
+
+const barbershopId = barbershop.id;
+const whatsappFromHint = twilioConfig?.whatsapp_from ?? '';
+const rulesJson = JSON.stringify(rules.map(r => ({ ...r, ...parseTemplate(r.message_template) })));
+---
+
+<DashboardLayout title="Re-Marketing">
+
+<!-- ═══════════════ TWILIO SETUP GATE ═══════════════════════════════════════ -->
+{!twilioConfigured && (
+  <div class="max-w-lg mx-auto mt-8">
+    <div class="text-center mb-8">
+      <!-- Twilio logo -->
+      <div class="flex items-center justify-center gap-3 mb-5">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-12 h-12 rounded-xl shadow-lg">
+          <rect width="512" height="512" rx="15%" fill="#f22f46"/>
+          <circle r="192" cy="256" cx="256" fill="#fff"/>
+          <circle r="141" cy="256" cx="256" fill="#f22f46"/>
+          <g fill="#fff">
+            <circle r="39.75" cy="208.75" cx="208.75"/>
+            <circle r="39.75" cy="208.75" cx="310.75"/>
+            <circle r="39.75" cy="310.75" cx="208.75"/>
+            <circle r="39.75" cy="310.75" cx="310.75"/>
+          </g>
+        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6 text-[#2a2a3a]" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg viewBox="-0.003 -293.41895027729095 1172.923 1474.5159502772908" xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" clip-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" class="w-12 h-12">
+          <path d="M308.678 1021.49l19.153 9.576a499.739 499.739 0 0 0 258.244 70.227c279.729-.638 509.563-231.016 509.563-510.744 0-135.187-53.692-265.012-149.169-360.713-95.35-96.69-225.62-151.18-361.383-151.18-278.451 0-507.552 229.133-507.552 507.552 0 2.203 0 4.373.032 6.576a523.81 523.81 0 0 0 76.612 268.14l12.768 19.153-51.074 188.337 192.806-46.925z" fill="#00E676" fill-rule="nonzero"/>
+          <path d="M1003.29 172.378C894.597 61.482 745.49-.732 590.225 0h-.99C269.479.001 6.35 263.131 6.35 582.888c0 1.5.032 2.969.032 4.47a616.759 616.759 0 0 0 76.612 290.485L-.003 1181.097l309.32-79.804a569.202 569.202 0 0 0 278.993 70.228c320.939-1.756 584.036-266.385 583.844-587.356.766-154.213-60.044-302.52-168.864-411.787m-413.065 900.186a473.935 473.935 0 0 1-245.476-67.035l-19.153-9.577-184.187 47.883 47.882-181.953-12.768-19.153a484.242 484.242 0 0 1-72.558-254.957c0-265.65 218.599-484.25 484.25-484.25 265.65 0 484.248 218.6 484.248 484.25 0 167.269-86.666 323.11-228.781 411.372a464.838 464.838 0 0 1-251.86 73.42m280.59-354.329l-35.114-15.96s-51.075-22.346-82.996-38.306c-3.192 0-6.384-3.192-9.577-3.192a46.308 46.308 0 0 0-22.345 6.384c-6.799 3.99-3.192 3.192-47.882 54.266-3.032 5.97-9.257 9.705-15.96 9.577h-3.193a24.328 24.328 0 0 1-12.768-6.384l-15.961-6.385a309.91 309.91 0 0 1-92.573-60.65c-6.384-6.385-15.96-12.77-22.345-19.154a357.13 357.13 0 0 1-60.65-76.611l-3.193-6.384a46.475 46.475 0 0 1-6.384-12.769 23.915 23.915 0 0 1 3.192-15.96c2.905-4.789 12.769-15.962 22.345-25.538 9.577-9.576 9.577-15.96 15.961-22.345a39.33 39.33 0 0 0 6.384-31.922 1246.398 1246.398 0 0 0-51.074-121.301 37.099 37.099 0 0 0-22.345-15.961H380.82c-6.384 0-12.768 3.192-19.153 3.192l-3.192 3.192c-6.384 3.192-12.768 9.577-19.153 12.769-6.384 3.192-9.576 12.769-15.96 19.153a162.752 162.752 0 0 0-35.114 98.956 189.029 189.029 0 0 0 15.96 73.42l3.193 9.576a532.111 532.111 0 0 0 118.11 162.8l12.768 12.769a193.037 193.037 0 0 1 25.537 25.537c66.141 57.554 144.7 99.052 229.516 121.302 9.576 3.192 22.345 3.192 31.921 6.384h31.922a118.126 118.126 0 0 0 47.882-12.769c7.82-3.543 15.29-7.82 22.345-12.768l6.384-6.385c6.385-6.384 12.769-9.576 19.153-15.96a84.393 84.393 0 0 0 15.961-19.153c6.129-14.301 10.438-29.304 12.769-44.69V724.62a40.107 40.107 0 0 0-9.577-6.385" fill="#fff" fill-rule="nonzero"/>
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold text-white mb-2">Conecta Twilio para Re-Marketing</h1>
+      <p class="text-[var(--color-text-secondary)] text-sm leading-relaxed">El módulo de Re-Marketing usa Twilio para enviar mensajes de WhatsApp automáticos a tus clientes inactivos.</p>
+    </div>
+
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-2xl p-6 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Account SID <span class="text-[var(--color-text-secondary)] text-xs">(ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)</span></label>
+        <input type="text" id="twilio-sid" autocomplete="off"
+          class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#2563eb] transition-colors"
+          placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Auth Token</label>
+        <input type="password" id="twilio-token" autocomplete="new-password"
+          class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#2563eb] transition-colors"
+          placeholder="••••••••••••••••••••••••••••••••" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Número de WhatsApp <span class="text-[var(--color-text-secondary)] text-xs">(formato: whatsapp:+57...)</span></label>
+        <input type="text" id="twilio-from"
+          class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#2563eb] transition-colors"
+          placeholder="whatsapp:+15005550006" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Número SMS <span class="text-[var(--color-text-secondary)] text-xs">(opcional · para envíos por SMS)</span></label>
+        <input type="text" id="twilio-sms-from"
+          class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#2563eb] transition-colors"
+          placeholder="+15005550006" />
+      </div>
+
+      <p id="twilio-error" class="text-red-400 text-sm hidden"></p>
+
+      <button id="btn-save-twilio"
+        class="w-full py-3 bg-[#25D366] hover:bg-[#1ebe5d] text-white font-semibold rounded-lg text-sm transition-colors">
+        Guardar y activar Re-Marketing
+      </button>
+
+      <div class="pt-2 border-t border-[var(--color-border)]">
+        <p class="text-xs text-[var(--color-text-secondary)] text-center">¿No tienes cuenta?
+          <a href="https://www.twilio.com/try-twilio" target="_blank" rel="noopener" class="text-[#2563eb] hover:underline">Crear cuenta gratuita en Twilio →</a>
+        </p>
+        <p class="text-xs text-[#555568] text-center mt-1">Las credenciales se guardan de forma cifrada y nunca son visibles después de guardar.</p>
+      </div>
+    </div>
+  </div>
+)}
+
+<!-- ═══════════════ DASHBOARD (solo si Twilio configurado) ══════════════════ -->
+{twilioConfigured && (
+  <>
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white mb-1">Re-Marketing</h1>
+        <p class="text-[var(--color-text-secondary)]">Recupera clientes inactivos con mensajes automáticos de WhatsApp</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- Twilio status badge -->
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-[#f22f46]/10 border border-[#f22f46]/20 rounded-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-4 h-4 rounded flex-shrink-0">
+            <rect width="512" height="512" rx="15%" fill="#f22f46"/>
+            <circle r="192" cy="256" cx="256" fill="#fff"/>
+            <circle r="141" cy="256" cx="256" fill="#f22f46"/>
+            <g fill="#fff"><circle r="39.75" cy="208.75" cx="208.75"/><circle r="39.75" cy="208.75" cx="310.75"/><circle r="39.75" cy="310.75" cx="208.75"/><circle r="39.75" cy="310.75" cx="310.75"/></g>
+          </svg>
+          <svg viewBox="-0.003 -293.41895027729095 1172.923 1474.5159502772908" xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" clip-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" class="w-4 h-4 flex-shrink-0">
+            <path d="M308.678 1021.49l19.153 9.576a499.739 499.739 0 0 0 258.244 70.227c279.729-.638 509.563-231.016 509.563-510.744 0-135.187-53.692-265.012-149.169-360.713-95.35-96.69-225.62-151.18-361.383-151.18-278.451 0-507.552 229.133-507.552 507.552 0 2.203 0 4.373.032 6.576a523.81 523.81 0 0 0 76.612 268.14l12.768 19.153-51.074 188.337 192.806-46.925z" fill="#00E676" fill-rule="nonzero"/>
+            <path d="M1003.29 172.378C894.597 61.482 745.49-.732 590.225 0h-.99C269.479.001 6.35 263.131 6.35 582.888c0 1.5.032 2.969.032 4.47a616.759 616.759 0 0 0 76.612 290.485L-.003 1181.097l309.32-79.804a569.202 569.202 0 0 0 278.993 70.228c320.939-1.756 584.036-266.385 583.844-587.356.766-154.213-60.044-302.52-168.864-411.787m-413.065 900.186a473.935 473.935 0 0 1-245.476-67.035l-19.153-9.577-184.187 47.883 47.882-181.953-12.768-19.153a484.242 484.242 0 0 1-72.558-254.957c0-265.65 218.599-484.25 484.25-484.25 265.65 0 484.248 218.6 484.248 484.25 0 167.269-86.666 323.11-228.781 411.372a464.838 464.838 0 0 1-251.86 73.42m280.59-354.329l-35.114-15.96s-51.075-22.346-82.996-38.306c-3.192 0-6.384-3.192-9.577-3.192a46.308 46.308 0 0 0-22.345 6.384c-6.799 3.99-3.192 3.192-47.882 54.266-3.032 5.97-9.257 9.705-15.96 9.577h-3.193a24.328 24.328 0 0 1-12.768-6.384l-15.961-6.385a309.91 309.91 0 0 1-92.573-60.65c-6.384-6.385-15.96-12.77-22.345-19.154a357.13 357.13 0 0 1-60.65-76.611l-3.193-6.384a46.475 46.475 0 0 1-6.384-12.769 23.915 23.915 0 0 1 3.192-15.96c2.905-4.789 12.769-15.962 22.345-25.538 9.577-9.576 9.577-15.96 15.961-22.345a39.33 39.33 0 0 0 6.384-31.922 1246.398 1246.398 0 0 0-51.074-121.301 37.099 37.099 0 0 0-22.345-15.961H380.82c-6.384 0-12.768 3.192-19.153 3.192l-3.192 3.192c-6.384 3.192-12.768 9.577-19.153 12.769-6.384 3.192-9.576 12.769-15.96 19.153a162.752 162.752 0 0 0-35.114 98.956 189.029 189.029 0 0 0 15.96 73.42l3.193 9.576a532.111 532.111 0 0 0 118.11 162.8l12.768 12.769a193.037 193.037 0 0 1 25.537 25.537c66.141 57.554 144.7 99.052 229.516 121.302 9.576 3.192 22.345 3.192 31.921 6.384h31.922a118.126 118.126 0 0 0 47.882-12.769c7.82-3.543 15.29-7.82 22.345-12.768l6.384-6.385c6.385-6.384 12.769-9.576 19.153-15.96a84.393 84.393 0 0 0 15.961-19.153c6.129-14.301 10.438-29.304 12.769-44.69V724.62a40.107 40.107 0 0 0-9.577-6.385" fill="#fff" fill-rule="nonzero"/>
+          </svg>
+          <span class="text-xs font-medium text-white">WhatsApp {whatsappFromHint}</span>
+        </div>
+        <button id="btn-reconfig" class="text-xs text-[var(--color-text-secondary)] hover:text-white transition-colors underline">Reconfigurar</button>
+        <button id="btn-send-now" class="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white font-semibold text-sm rounded-lg transition-colors">
+          <svg viewBox="-0.003 -293.41895027729095 1172.923 1474.5159502772908" xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" clip-rule="evenodd" class="w-4 h-4">
+            <path d="M308.678 1021.49l19.153 9.576a499.739 499.739 0 0 0 258.244 70.227c279.729-.638 509.563-231.016 509.563-510.744 0-135.187-53.692-265.012-149.169-360.713-95.35-96.69-225.62-151.18-361.383-151.18-278.451 0-507.552 229.133-507.552 507.552 0 2.203 0 4.373.032 6.576a523.81 523.81 0 0 0 76.612 268.14l12.768 19.153-51.074 188.337 192.806-46.925z" fill="#fff" fill-rule="nonzero"/>
+            <path d="M1003.29 172.378C894.597 61.482 745.49-.732 590.225 0h-.99C269.479.001 6.35 263.131 6.35 582.888c0 1.5.032 2.969.032 4.47a616.759 616.759 0 0 0 76.612 290.485L-.003 1181.097l309.32-79.804a569.202 569.202 0 0 0 278.993 70.228c320.939-1.756 584.036-266.385 583.844-587.356.766-154.213-60.044-302.52-168.864-411.787m-413.065 900.186a473.935 473.935 0 0 1-245.476-67.035l-19.153-9.577-184.187 47.883 47.882-181.953-12.768-19.153a484.242 484.242 0 0 1-72.558-254.957c0-265.65 218.599-484.25 484.25-484.25 265.65 0 484.248 218.6 484.248 484.25 0 167.269-86.666 323.11-228.781 411.372a464.838 464.838 0 0 1-251.86 73.42m280.59-354.329l-35.114-15.96s-51.075-22.346-82.996-38.306c-3.192 0-6.384-3.192-9.577-3.192a46.308 46.308 0 0 0-22.345 6.384c-6.799 3.99-3.192 3.192-47.882 54.266-3.032 5.97-9.257 9.705-15.96 9.577h-3.193a24.328 24.328 0 0 1-12.768-6.384l-15.961-6.385a309.91 309.91 0 0 1-92.573-60.65c-6.384-6.385-15.96-12.77-22.345-19.154a357.13 357.13 0 0 1-60.65-76.611l-3.193-6.384a46.475 46.475 0 0 1-6.384-12.769 23.915 23.915 0 0 1 3.192-15.96c2.905-4.789 12.769-15.962 22.345-25.538 9.577-9.576 9.577-15.96 15.961-22.345a39.33 39.33 0 0 0 6.384-31.922 1246.398 1246.398 0 0 0-51.074-121.301 37.099 37.099 0 0 0-22.345-15.961H380.82c-6.384 0-12.768 3.192-19.153 3.192l-3.192 3.192c-6.384 3.192-12.768 9.577-19.153 12.769-6.384 3.192-9.576 12.769-15.96 19.153a162.752 162.752 0 0 0-35.114 98.956 189.029 189.029 0 0 0 15.96 73.42l3.193 9.576a532.111 532.111 0 0 0 118.11 162.8l12.768 12.769a193.037 193.037 0 0 1 25.537 25.537c66.141 57.554 144.7 99.052 229.516 121.302 9.576 3.192 22.345 3.192 31.921 6.384h31.922a118.126 118.126 0 0 0 47.882-12.769c7.82-3.543 15.29-7.82 22.345-12.768l6.384-6.385c6.385-6.384 12.769-9.576 19.153-15.96a84.393 84.393 0 0 0 15.961-19.153c6.129-14.301 10.438-29.304 12.769-44.69V724.62a40.107 40.107 0 0 0-9.577-6.385" fill="#fff" fill-rule="nonzero"/>
+          </svg>
+          Enviar mensaje
+        </button>
+        <button id="btn-new-rule" class="flex items-center gap-2 px-4 py-2.5 bg-[#2563eb] hover:bg-[#3b82f6] text-white font-semibold text-sm rounded-lg transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nueva Regla
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <p class="text-xs text-[var(--color-text-secondary)] mb-1">Reglas activas</p>
+        <p class="text-2xl font-bold text-white">{rules.filter(r => r.is_active).length}</p>
+      </div>
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <p class="text-xs text-[var(--color-text-secondary)] mb-1">Clientes inactivos <span class="text-[10px]">(+30 días)</span></p>
+        <p class="text-2xl font-bold text-amber-400">{inactiveClients}</p>
+      </div>
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <p class="text-xs text-[var(--color-text-secondary)] mb-1">Total clientes</p>
+        <p class="text-2xl font-bold text-white">{totalClients}</p>
+      </div>
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <p class="text-xs text-[var(--color-text-secondary)] mb-1">Mensajes enviados</p>
+        <p class="text-2xl font-bold text-green-400">{sentTotal}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <!-- Rules list -->
+      <div class="lg:col-span-3 space-y-3" id="rules-list">
+        {rules.length === 0 ? (
+          <div class="bg-[var(--color-surface-elevated)] border border-dashed border-[var(--color-border)] rounded-xl p-12 text-center" id="rules-empty">
+            <div class="text-4xl mb-3">📢</div>
+            <p class="text-white font-semibold mb-1">Sin reglas configuradas</p>
+            <p class="text-[var(--color-text-secondary)] text-sm">Crea tu primera regla para recuperar clientes inactivos.</p>
+          </div>
+        ) : rules.map(rule => {
+          const tpl = parseTemplate(rule.message_template);
+          return (
+            <div class="rule-card bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5" data-id={rule.id}>
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1.5">
+                    <span class={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold rule-status-badge ${rule.is_active ? 'bg-green-500/20 text-green-400' : 'bg-[#2a2a3a] text-[var(--color-text-secondary)]'}`}>
+                      {rule.is_active ? '● Activa' : '○ Pausada'}
+                    </span>
+                    <span class="text-xs text-[var(--color-text-secondary)]">Después de {rule.days_after_last_visit} días sin visita</span>
+                    {tpl.media_url && (
+                      <span class="inline-flex items-center gap-1 text-[10px] text-[var(--color-text-secondary)] bg-[#1a1a25] px-2 py-0.5 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        Imagen
+                      </span>
+                    )}
+                  </div>
+                  <h3 class="font-semibold text-white mb-1">{rule.name}</h3>
+                  <p class="text-sm text-[var(--color-text-secondary)] line-clamp-2">{tpl.text}</p>
+                  {tpl.media_url && (
+                    <img src={tpl.media_url} alt="Media" class="mt-2 w-20 h-14 object-cover rounded-lg border border-[var(--color-border)]" />
+                  )}
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" class="sr-only peer rule-toggle" checked={rule.is_active} data-id={rule.id} />
+                    <div class="w-9 h-5 bg-[#2a2a3a] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#2563eb] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                  </label>
+                  <button class="rule-edit-btn p-1.5 text-[var(--color-text-secondary)] hover:text-white transition-colors" data-id={rule.id}
+                    data-rule={JSON.stringify({ ...rule, ...tpl })}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button class="rule-delete-btn p-1.5 text-[var(--color-text-secondary)] hover:text-red-400 transition-colors" data-id={rule.id}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <!-- Activity + tip -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-[var(--color-border)]">
+            <h2 class="font-semibold text-white text-sm">Actividad reciente</h2>
+          </div>
+          {recentLogs.length === 0 ? (
+            <div class="p-8 text-center"><p class="text-[var(--color-text-secondary)] text-sm">Sin actividad registrada</p></div>
+          ) : (
+            <div class="divide-y divide-[#2a2a3a] max-h-[420px] overflow-y-auto">
+              {recentLogs.map((log: any) => (
+                <div class="px-4 py-3">
+                  <div class="flex items-center justify-between gap-2 mb-0.5">
+                    <span class="text-sm font-medium text-white truncate">{(log as any).clients?.name ?? 'Cliente'}</span>
+                    <span class={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                      (log as any).status === 'sent' ? 'bg-green-500/20 text-green-400' :
+                      (log as any).status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {(log as any).status === 'sent' ? 'Enviado' : (log as any).status === 'pending' ? 'Pendiente' : 'Fallido'}
+                    </span>
+                  </div>
+                  <p class="text-xs text-[var(--color-text-secondary)]">{(log as any).remarketing_rules?.name ?? '—'}</p>
+                  <p class="text-[11px] text-[#555568] mt-0.5">
+                    {new Date((log as any).scheduled_date ?? (log as any).created_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-4">
+          <p class="text-xs font-semibold text-white mb-2">Variables disponibles</p>
+          <div class="flex flex-wrap gap-1.5">
+            {['{nombre}', '{dias}', '{barberia}', '{telefono}'].map(v => (
+              <span class="text-xs font-mono px-2 py-1 bg-[#1a1a25] border border-[var(--color-border)] rounded text-[var(--color-text-secondary)]">{v}</span>
+            ))}
+          </div>
+          <p class="text-[11px] text-[#555568] mt-2">Escríbelas en el mensaje y se reemplazarán automáticamente al enviar.</p>
+        </div>
+      </div>
+    </div>
+  </>
+)}
+
+</DashboardLayout>
+
+<!-- ═══════════════ SEND NOW MODAL ══════════════════════════════════════════ -->
+<div id="send-modal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="send-modal-backdrop"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-4">
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-2xl w-full max-w-md shadow-2xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+        <div class="flex items-center gap-2.5">
+          <svg viewBox="-0.003 -293.41895027729095 1172.923 1474.5159502772908" xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" clip-rule="evenodd" class="w-5 h-5">
+            <path d="M308.678 1021.49l19.153 9.576a499.739 499.739 0 0 0 258.244 70.227c279.729-.638 509.563-231.016 509.563-510.744 0-135.187-53.692-265.012-149.169-360.713-95.35-96.69-225.62-151.18-361.383-151.18-278.451 0-507.552 229.133-507.552 507.552 0 2.203 0 4.373.032 6.576a523.81 523.81 0 0 0 76.612 268.14l12.768 19.153-51.074 188.337 192.806-46.925z" fill="#00E676" fill-rule="nonzero"/>
+            <path d="M1003.29 172.378C894.597 61.482 745.49-.732 590.225 0h-.99C269.479.001 6.35 263.131 6.35 582.888c0 1.5.032 2.969.032 4.47a616.759 616.759 0 0 0 76.612 290.485L-.003 1181.097l309.32-79.804a569.202 569.202 0 0 0 278.993 70.228c320.939-1.756 584.036-266.385 583.844-587.356.766-154.213-60.044-302.52-168.864-411.787m-413.065 900.186a473.935 473.935 0 0 1-245.476-67.035l-19.153-9.577-184.187 47.883 47.882-181.953-12.768-19.153a484.242 484.242 0 0 1-72.558-254.957c0-265.65 218.599-484.25 484.25-484.25 265.65 0 484.248 218.6 484.248 484.25 0 167.269-86.666 323.11-228.781 411.372a464.838 464.838 0 0 1-251.86 73.42m280.59-354.329l-35.114-15.96s-51.075-22.346-82.996-38.306c-3.192 0-6.384-3.192-9.577-3.192a46.308 46.308 0 0 0-22.345 6.384c-6.799 3.99-3.192 3.192-47.882 54.266-3.032 5.97-9.257 9.705-15.96 9.577h-3.193a24.328 24.328 0 0 1-12.768-6.384l-15.961-6.385a309.91 309.91 0 0 1-92.573-60.65c-6.384-6.385-15.96-12.77-22.345-19.154a357.13 357.13 0 0 1-60.65-76.611l-3.193-6.384a46.475 46.475 0 0 1-6.384-12.769 23.915 23.915 0 0 1 3.192-15.96c2.905-4.789 12.769-15.962 22.345-25.538 9.577-9.576 9.577-15.96 15.961-22.345a39.33 39.33 0 0 0 6.384-31.922 1246.398 1246.398 0 0 0-51.074-121.301 37.099 37.099 0 0 0-22.345-15.961H380.82c-6.384 0-12.768 3.192-19.153 3.192l-3.192 3.192c-6.384 3.192-12.768 9.577-19.153 12.769-6.384 3.192-9.576 12.769-15.96 19.153a162.752 162.752 0 0 0-35.114 98.956 189.029 189.029 0 0 0 15.96 73.42l3.193 9.576a532.111 532.111 0 0 0 118.11 162.8l12.768 12.769a193.037 193.037 0 0 1 25.537 25.537c66.141 57.554 144.7 99.052 229.516 121.302 9.576 3.192 22.345 3.192 31.921 6.384h31.922a118.126 118.126 0 0 0 47.882-12.769c7.82-3.543 15.29-7.82 22.345-12.768l6.384-6.385c6.385-6.384 12.769-9.576 19.153-15.96a84.393 84.393 0 0 0 15.961-19.153c6.129-14.301 10.438-29.304 12.769-44.69V724.62a40.107 40.107 0 0 0-9.577-6.385" fill="#fff" fill-rule="nonzero"/>
+          </svg>
+          <h2 class="font-semibold text-white">Enviar mensaje de WhatsApp</h2>
+        </div>
+        <button id="send-modal-close" class="text-[var(--color-text-secondary)] hover:text-white transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-4">
+        <!-- Channel selector -->
+        <div class="grid grid-cols-2 gap-2">
+          <button id="channel-whatsapp"
+            class="channel-btn flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all border-[#25D366] bg-[#25D366]/10 text-white"
+            data-channel="whatsapp">
+            <svg viewBox="-0.003 -293.41895027729095 1172.923 1474.5159502772908" xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" clip-rule="evenodd" class="w-4 h-4">
+              <path d="M308.678 1021.49l19.153 9.576a499.739 499.739 0 0 0 258.244 70.227c279.729-.638 509.563-231.016 509.563-510.744 0-135.187-53.692-265.012-149.169-360.713-95.35-96.69-225.62-151.18-361.383-151.18-278.451 0-507.552 229.133-507.552 507.552 0 2.203 0 4.373.032 6.576a523.81 523.81 0 0 0 76.612 268.14l12.768 19.153-51.074 188.337 192.806-46.925z" fill="#00E676" fill-rule="nonzero"/>
+              <path d="M1003.29 172.378C894.597 61.482 745.49-.732 590.225 0h-.99C269.479.001 6.35 263.131 6.35 582.888c0 1.5.032 2.969.032 4.47a616.759 616.759 0 0 0 76.612 290.485L-.003 1181.097l309.32-79.804a569.202 569.202 0 0 0 278.993 70.228c320.939-1.756 584.036-266.385 583.844-587.356.766-154.213-60.044-302.52-168.864-411.787m-413.065 900.186a473.935 473.935 0 0 1-245.476-67.035l-19.153-9.577-184.187 47.883 47.882-181.953-12.768-19.153a484.242 484.242 0 0 1-72.558-254.957c0-265.65 218.599-484.25 484.25-484.25 265.65 0 484.248 218.6 484.248 484.25 0 167.269-86.666 323.11-228.781 411.372a464.838 464.838 0 0 1-251.86 73.42m280.59-354.329l-35.114-15.96s-51.075-22.346-82.996-38.306c-3.192 0-6.384-3.192-9.577-3.192a46.308 46.308 0 0 0-22.345 6.384c-6.799 3.99-3.192 3.192-47.882 54.266-3.032 5.97-9.257 9.705-15.96 9.577h-3.193a24.328 24.328 0 0 1-12.768-6.384l-15.961-6.385a309.91 309.91 0 0 1-92.573-60.65c-6.384-6.385-15.96-12.77-22.345-19.154a357.13 357.13 0 0 1-60.65-76.611l-3.193-6.384a46.475 46.475 0 0 1-6.384-12.769 23.915 23.915 0 0 1 3.192-15.96c2.905-4.789 12.769-15.962 22.345-25.538 9.577-9.576 9.577-15.96 15.961-22.345a39.33 39.33 0 0 0 6.384-31.922 1246.398 1246.398 0 0 0-51.074-121.301 37.099 37.099 0 0 0-22.345-15.961H380.82c-6.384 0-12.768 3.192-19.153 3.192l-3.192 3.192c-6.384 3.192-12.768 9.577-19.153 12.769-6.384 3.192-9.576 12.769-15.96 19.153a162.752 162.752 0 0 0-35.114 98.956 189.029 189.029 0 0 0 15.96 73.42l3.193 9.576a532.111 532.111 0 0 0 118.11 162.8l12.768 12.769a193.037 193.037 0 0 1 25.537 25.537c66.141 57.554 144.7 99.052 229.516 121.302 9.576 3.192 22.345 3.192 31.921 6.384h31.922a118.126 118.126 0 0 0 47.882-12.769c7.82-3.543 15.29-7.82 22.345-12.768l6.384-6.385c6.385-6.384 12.769-9.576 19.153-15.96a84.393 84.393 0 0 0 15.961-19.153c6.129-14.301 10.438-29.304 12.769-44.69V724.62a40.107 40.107 0 0 0-9.577-6.385" fill="#fff" fill-rule="nonzero"/>
+            </svg>
+            WhatsApp
+          </button>
+          <button id="channel-sms"
+            class="channel-btn flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all border-[var(--color-border)] bg-[#1a1a25] text-[var(--color-text-secondary)]"
+            data-channel="sms">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            SMS
+          </button>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Número de teléfono *</label>
+          <input type="tel" id="send-to"
+            placeholder="+573001234567"
+            class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#25D366] transition-colors" />
+          <p class="text-xs text-[#555568] mt-1">Ej: +573001234567 (sin espacios)</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Mensaje *</label>
+          <textarea id="send-message" rows={5}
+            placeholder="Escribe tu mensaje aquí..."
+            class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm focus:outline-none focus:border-[#25D366] resize-none transition-colors"></textarea>
+          <p class="text-xs text-[#555568] mt-1 text-right"><span id="send-char-count">0</span> caracteres</p>
+        </div>
+
+        <div id="send-media-row">
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Imagen <span class="text-[var(--color-text-secondary)] text-xs">(opcional · URL pública)</span></label>
+          <input type="url" id="send-media-url"
+            placeholder="https://ejemplo.com/imagen.jpg"
+            class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#25D366] transition-colors" />
+        </div>
+
+        <p id="send-error" class="text-red-400 text-sm hidden"></p>
+        <div id="send-success" class="hidden bg-[#1a1a25] border border-[var(--color-border)] rounded-lg p-3 space-y-1">
+          <p class="text-green-400 text-sm font-medium">✓ Twilio aceptó el mensaje</p>
+          <p id="send-success-detail" class="text-xs text-[var(--color-text-secondary)] font-mono"></p>
+          <p id="send-success-warn" class="text-xs text-amber-400 hidden"></p>
+          <a id="send-twilio-link" href="#" target="_blank" rel="noopener" class="text-xs text-[#2563eb] hover:underline hidden">Ver en consola de Twilio →</a>
+        </div>
+
+        <div class="flex gap-3 pt-1">
+          <button id="send-modal-cancel" class="flex-1 py-2.5 border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded-lg text-sm transition-colors">Cancelar</button>
+          <button id="btn-do-send" class="flex-1 py-2.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white font-semibold rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Enviar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ RULE MODAL ═══════════════════════════════════════════════ -->
+<div id="rule-modal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="rule-modal-backdrop"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-4">
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] sticky top-0 bg-[var(--color-surface-elevated)] z-10">
+        <h2 class="font-semibold text-white" id="modal-title">Nueva Regla</h2>
+        <button id="rule-modal-close" class="text-[var(--color-text-secondary)] hover:text-white transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-5">
+        <input type="hidden" id="rule-edit-id" value="" />
+
+        <!-- Name -->
+        <div>
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Nombre de la regla *</label>
+          <input type="text" id="rule-name" placeholder="Ej: Clientes 30 días inactivos"
+            class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm focus:outline-none focus:border-[#2563eb]" />
+        </div>
+
+        <!-- Days -->
+        <div>
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Días sin visita para activar *</label>
+          <div class="flex items-center gap-3 mb-2">
+            <input type="number" id="rule-days" min="1" max="365" value="30"
+              class="w-24 px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm focus:outline-none focus:border-[#2563eb]" />
+            <span class="text-sm text-[var(--color-text-secondary)]">días sin visita</span>
+          </div>
+          <div class="flex gap-2">
+            {[15, 30, 45, 60, 90].map(d => (
+              <button class="days-preset px-2.5 py-1 text-xs bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] hover:text-white hover:border-[#3a3a4a] transition-colors" data-days={String(d)}>{d}d</button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Message -->
+        <div>
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Mensaje *</label>
+          <textarea id="rule-message" rows={5}
+            placeholder="Hola {nombre}, hace {dias} días que no te vemos en {barberia}. ¡Te esperamos! 💈"
+            class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm focus:outline-none focus:border-[#2563eb] resize-none"></textarea>
+          <!-- Variable chips -->
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            {['{nombre}', '{dias}', '{barberia}', '{telefono}'].map(v => (
+              <button class="var-chip text-xs font-mono px-2 py-1 bg-[#1a1a25] border border-[var(--color-border)] rounded text-[var(--color-text-secondary)] hover:text-white hover:border-[#2563eb] transition-colors" data-var={v}>{v}</button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Media -->
+        <div>
+          <label class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Imagen o archivo <span class="text-[var(--color-text-secondary)] text-xs">(opcional)</span></label>
+
+          <!-- Upload zone -->
+          <div id="upload-zone"
+            class="border-2 border-dashed border-[var(--color-border)] rounded-xl p-6 text-center cursor-pointer hover:border-[#2563eb]/50 transition-colors"
+            ondragover="event.preventDefault()"
+            ondrop="handleFileDrop(event)">
+            <input type="file" id="media-file-input" accept="image/*" class="hidden" />
+            <div id="upload-placeholder">
+              <svg class="mx-auto mb-2 text-[#555568]" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <p class="text-sm text-[var(--color-text-secondary)]">Arrastra una imagen o <button type="button" id="btn-browse" class="text-[#2563eb] hover:underline">selecciona un archivo</button></p>
+              <p class="text-xs text-[#555568] mt-1">JPG, PNG, WEBP, GIF · Máx 5MB</p>
+            </div>
+            <div id="upload-preview" class="hidden">
+              <img id="preview-img" src="" alt="preview" class="mx-auto max-h-32 rounded-lg object-contain mb-2" />
+              <button type="button" id="btn-remove-media" class="text-xs text-red-400 hover:text-red-300 transition-colors">✕ Eliminar imagen</button>
+            </div>
+            <div id="upload-progress" class="hidden">
+              <div class="flex items-center justify-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                Subiendo...
+              </div>
+            </div>
+          </div>
+
+          <!-- Or URL -->
+          <div class="flex items-center gap-3 my-3">
+            <div class="flex-1 h-px bg-[#2a2a3a]"></div>
+            <span class="text-xs text-[#555568]">o pega una URL</span>
+            <div class="flex-1 h-px bg-[#2a2a3a]"></div>
+          </div>
+          <input type="url" id="rule-media-url"
+            placeholder="https://ejemplo.com/imagen.jpg"
+            class="w-full px-4 py-2.5 bg-[#1a1a25] border border-[var(--color-border)] rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#2563eb]" />
+        </div>
+
+        <p id="rule-modal-error" class="text-red-400 text-sm hidden"></p>
+
+        <div class="flex gap-3 pt-1">
+          <button id="rule-modal-cancel" class="flex-1 py-2.5 border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-white rounded-lg text-sm transition-colors">Cancelar</button>
+          <button id="rule-modal-save" class="flex-1 py-2.5 bg-[#2563eb] hover:bg-[#3b82f6] text-white font-semibold rounded-lg text-sm transition-colors">Guardar regla</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ barbershopId, rulesJson }}>
+  var _uploadedMediaUrl = null;
+
+  // ── Twilio setup ───────────────────────────────────────────────────────────
+  var saveTwilioBtn = document.getElementById('btn-save-twilio');
+  if (saveTwilioBtn) {
+    saveTwilioBtn.addEventListener('click', function() {
+      var sid = document.getElementById('twilio-sid').value.trim();
+      var token = document.getElementById('twilio-token').value.trim();
+      var from = document.getElementById('twilio-from').value.trim();
+      var smsFrom = document.getElementById('twilio-sms-from')?.value.trim() || '';
+      var errEl = document.getElementById('twilio-error');
+
+      if (!sid || !token || !from) {
+        errEl.textContent = 'Completa todos los campos.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (!from.startsWith('whatsapp:')) {
+        errEl.textContent = 'El número debe empezar con "whatsapp:" (ej: whatsapp:+15005550006)';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      errEl.classList.add('hidden');
+      saveTwilioBtn.disabled = true;
+      saveTwilioBtn.textContent = 'Guardando...';
+
+      fetch('/api/remarketing/twilio-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_sid: sid, auth_token: token, whatsapp_from: from, sms_from: smsFrom }),
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+        .then(function(result) {
+          if (result.ok) {
+            window.location.reload();
+          } else {
+            errEl.textContent = result.d.error || 'Error al guardar.';
+            errEl.classList.remove('hidden');
+            saveTwilioBtn.disabled = false;
+            saveTwilioBtn.textContent = 'Guardar y activar Re-Marketing';
+          }
+        })
+        .catch(function() {
+          errEl.textContent = 'Error de conexión.';
+          errEl.classList.remove('hidden');
+          saveTwilioBtn.disabled = false;
+          saveTwilioBtn.textContent = 'Guardar y activar Re-Marketing';
+        });
+    });
+  }
+
+  // Reconfigurar button
+  var reconfigBtn = document.getElementById('btn-reconfig');
+  if (reconfigBtn) {
+    reconfigBtn.addEventListener('click', function() {
+      if (!confirm('¿Deseas eliminar la configuración de Twilio actual?')) return;
+      fetch('/api/remarketing/twilio-config', { method: 'DELETE' })
+        .then(function(r) { if (r.ok) window.location.reload(); });
+    });
+  }
+
+  // ── Modal helpers ──────────────────────────────────────────────────────────
+  function openModal(rule) {
+    _uploadedMediaUrl = null;
+    var modal = document.getElementById('rule-modal');
+    document.getElementById('modal-title').textContent = rule ? 'Editar Regla' : 'Nueva Regla';
+    document.getElementById('rule-name').value = rule ? rule.name : '';
+    document.getElementById('rule-days').value = rule ? String(rule.days_after_last_visit) : '30';
+    document.getElementById('rule-message').value = rule ? (rule.text || rule.message_template || '') : '';
+    document.getElementById('rule-edit-id').value = rule ? rule.id : '';
+    document.getElementById('rule-modal-error').classList.add('hidden');
+
+    var mediaUrl = rule ? (rule.media_url || '') : '';
+    document.getElementById('rule-media-url').value = mediaUrl;
+    showPreviewUrl(mediaUrl);
+
+    modal.classList.remove('hidden');
+    document.getElementById('rule-name').focus();
+  }
+
+  function closeModal() {
+    document.getElementById('rule-modal').classList.add('hidden');
+    _uploadedMediaUrl = null;
+    resetUploadZone();
+  }
+
+  function showPreviewUrl(url) {
+    var placeholder = document.getElementById('upload-placeholder');
+    var preview = document.getElementById('upload-preview');
+    var previewImg = document.getElementById('preview-img');
+    if (url) {
+      previewImg.src = url;
+      placeholder.classList.add('hidden');
+      preview.classList.remove('hidden');
+      _uploadedMediaUrl = url;
+    } else {
+      placeholder.classList.remove('hidden');
+      preview.classList.add('hidden');
+      _uploadedMediaUrl = null;
+    }
+  }
+
+  function resetUploadZone() {
+    document.getElementById('upload-placeholder').classList.remove('hidden');
+    document.getElementById('upload-preview').classList.add('hidden');
+    document.getElementById('upload-progress').classList.add('hidden');
+    document.getElementById('preview-img').src = '';
+    document.getElementById('rule-media-url').value = '';
+    document.getElementById('media-file-input').value = '';
+    _uploadedMediaUrl = null;
+  }
+
+  // ── File upload ────────────────────────────────────────────────────────────
+  function uploadFile(file) {
+    if (!file) return;
+    document.getElementById('upload-placeholder').classList.add('hidden');
+    document.getElementById('upload-preview').classList.add('hidden');
+    document.getElementById('upload-progress').classList.remove('hidden');
+
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/remarketing/upload', { method: 'POST', body: fd })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+      .then(function(result) {
+        document.getElementById('upload-progress').classList.add('hidden');
+        if (result.ok) {
+          _uploadedMediaUrl = result.d.url;
+          document.getElementById('rule-media-url').value = result.d.url;
+          showPreviewUrl(result.d.url);
+        } else {
+          document.getElementById('upload-placeholder').classList.remove('hidden');
+          document.getElementById('rule-modal-error').textContent = result.d.error || 'Error al subir imagen.';
+          document.getElementById('rule-modal-error').classList.remove('hidden');
+        }
+      })
+      .catch(function() {
+        document.getElementById('upload-progress').classList.add('hidden');
+        document.getElementById('upload-placeholder').classList.remove('hidden');
+        document.getElementById('rule-modal-error').textContent = 'Error de conexión al subir imagen.';
+        document.getElementById('rule-modal-error').classList.remove('hidden');
+      });
+  }
+
+  window.handleFileDrop = function(e) {
+    e.preventDefault();
+    var file = e.dataTransfer?.files?.[0];
+    if (file) uploadFile(file);
+  };
+
+  var browseBtn = document.getElementById('btn-browse');
+  var fileInput = document.getElementById('media-file-input');
+  if (browseBtn && fileInput) {
+    browseBtn.addEventListener('click', function() { fileInput.click(); });
+    fileInput.addEventListener('change', function() {
+      if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+    });
+  }
+
+  var removeMediaBtn = document.getElementById('btn-remove-media');
+  if (removeMediaBtn) {
+    removeMediaBtn.addEventListener('click', function() { resetUploadZone(); });
+  }
+
+  // Sync URL input → preview
+  var mediaUrlInput = document.getElementById('rule-media-url');
+  if (mediaUrlInput) {
+    mediaUrlInput.addEventListener('blur', function() {
+      var url = mediaUrlInput.value.trim();
+      if (url) showPreviewUrl(url);
+      else resetUploadZone();
+    });
+  }
+
+  // ── Save rule ──────────────────────────────────────────────────────────────
+  function getMediaUrl() {
+    return _uploadedMediaUrl || document.getElementById('rule-media-url')?.value.trim() || null;
+  }
+
+  // ── Rule card builder ──────────────────────────────────────────────────────
+  function buildRuleCard(rule) {
+    var tplText = rule.text || (function() { try { return JSON.parse(rule.message_template).text; } catch(e) { return rule.message_template; } })();
+    var tplMedia = rule.media_url || (function() { try { return JSON.parse(rule.message_template).media_url; } catch(e) { return null; } })();
+    var statusClass = rule.is_active ? 'bg-green-500/20 text-green-400' : 'bg-[#2a2a3a] text-[var(--color-text-secondary)]';
+    var statusLabel = rule.is_active ? '● Activa' : '○ Pausada';
+    var mediaBadge = tplMedia ? '<span class="inline-flex items-center gap-1 text-[10px] text-[var(--color-text-secondary)] bg-[#1a1a25] px-2 py-0.5 rounded-full"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'><rect x=\'3\' y=\'3\' width=\'18\' height=\'18\' rx=\'2\'/><circle cx=\'8.5\' cy=\'8.5\' r=\'1.5\'/><polyline points=\'21 15 16 10 5 21\'/></svg>Imagen</span>' : '';
+    var mediaThumb = tplMedia ? '<img src="' + tplMedia + '" alt="Media" class="mt-2 w-20 h-14 object-cover rounded-lg border border-[var(--color-border)]" />' : '';
+    var ruleJson = JSON.stringify({ ...rule, text: tplText, media_url: tplMedia }).replace(/"/g, '&quot;');
+
+    var div = document.createElement('div');
+    div.className = 'rule-card bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5';
+    div.dataset.id = rule.id;
+    div.innerHTML =
+      '<div class="flex items-start justify-between gap-3">'
+      + '<div class="flex-1 min-w-0">'
+      + '<div class="flex items-center gap-2 mb-1.5">'
+      + '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold rule-status-badge ' + statusClass + '">' + statusLabel + '</span>'
+      + '<span class="text-xs text-[var(--color-text-secondary)]">Después de ' + rule.days_after_last_visit + ' días sin visita</span>'
+      + mediaBadge
+      + '</div>'
+      + '<h3 class="font-semibold text-white mb-1">' + rule.name + '</h3>'
+      + '<p class="text-sm text-[var(--color-text-secondary)] line-clamp-2">' + tplText + '</p>'
+      + mediaThumb
+      + '</div>'
+      + '<div class="flex items-center gap-2 flex-shrink-0">'
+      + '<label class="relative inline-flex items-center cursor-pointer">'
+      + '<input type="checkbox" class="sr-only peer rule-toggle" ' + (rule.is_active ? 'checked' : '') + ' data-id="' + rule.id + '" />'
+      + '<div class="w-9 h-5 bg-[#2a2a3a] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#2563eb] after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>'
+      + '</label>'
+      + '<button class="rule-edit-btn p-1.5 text-[var(--color-text-secondary)] hover:text-white transition-colors" data-id="' + rule.id + '" data-rule="' + ruleJson + '">'
+      + '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+      + '</button>'
+      + '<button class="rule-delete-btn p-1.5 text-[var(--color-text-secondary)] hover:text-red-400 transition-colors" data-id="' + rule.id + '">'
+      + '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+      + '</button>'
+      + '</div></div>';
+    return div;
+  }
+
+  // ── Delegated events ───────────────────────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    var t = e.target;
+
+    if (t.closest('#btn-new-rule')) { openModal(null); return; }
+    if (t.closest('#rule-modal-close') || t.closest('#rule-modal-cancel') || t.id === 'rule-modal-backdrop') { closeModal(); return; }
+
+    var editBtn = t.closest('.rule-edit-btn');
+    if (editBtn) {
+      try { openModal(JSON.parse(editBtn.dataset.rule.replace(/&quot;/g, '"'))); } catch(e) {}
+      return;
+    }
+
+    var deleteBtn = t.closest('.rule-delete-btn');
+    if (deleteBtn) {
+      if (!confirm('¿Eliminar esta regla?')) return;
+      fetch('/api/remarketing/rules/' + deleteBtn.dataset.id, { method: 'DELETE' })
+        .then(function(r) {
+          if (r.ok || r.status === 204) {
+            var card = document.querySelector('.rule-card[data-id="' + deleteBtn.dataset.id + '"]');
+            if (card) card.remove();
+            var list = document.getElementById('rules-list');
+            if (list && !list.querySelector('.rule-card')) {
+              var empty = document.createElement('div');
+              empty.id = 'rules-empty';
+              empty.className = 'bg-[var(--color-surface-elevated)] border border-dashed border-[var(--color-border)] rounded-xl p-12 text-center';
+              empty.innerHTML = '<div class="text-4xl mb-3">📢</div><p class="text-white font-semibold mb-1">Sin reglas configuradas</p><p class="text-[var(--color-text-secondary)] text-sm">Crea tu primera regla para recuperar clientes inactivos.</p>';
+              list.appendChild(empty);
+            }
+          }
+        });
+      return;
+    }
+
+    var preset = t.closest('.days-preset');
+    if (preset) { document.getElementById('rule-days').value = preset.dataset.days; return; }
+
+    var varChip = t.closest('.var-chip');
+    if (varChip) {
+      var ta = document.getElementById('rule-message');
+      var v = varChip.dataset.var;
+      var pos = ta.selectionStart;
+      ta.value = ta.value.slice(0, pos) + v + ta.value.slice(ta.selectionEnd);
+      ta.selectionStart = ta.selectionEnd = pos + v.length;
+      ta.focus();
+      return;
+    }
+
+    if (t.closest('#rule-modal-save')) {
+      var name = document.getElementById('rule-name').value.trim();
+      var days = parseInt(document.getElementById('rule-days').value);
+      var msg = document.getElementById('rule-message').value.trim();
+      var mediaUrl = getMediaUrl();
+      var editId = document.getElementById('rule-edit-id').value;
+      var errEl = document.getElementById('rule-modal-error');
+
+      if (!name || !days || !msg) {
+        errEl.textContent = 'Completa nombre, días y mensaje.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      errEl.classList.add('hidden');
+
+      var saveBtn = document.getElementById('rule-modal-save');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Guardando...';
+
+      var payload = { name: name, days_after_last_visit: days, message_text: msg, media_url: mediaUrl };
+      var url = editId ? '/api/remarketing/rules/' + editId : '/api/remarketing/rules';
+      var method = editId ? 'PUT' : 'POST';
+
+      fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+        .then(function(result) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Guardar regla';
+          if (result.ok) {
+            var rule = { ...result.d, text: msg, media_url: mediaUrl };
+            var list = document.getElementById('rules-list');
+            if (editId) {
+              var existing = document.querySelector('.rule-card[data-id="' + editId + '"]');
+              if (existing) existing.replaceWith(buildRuleCard(rule));
+            } else {
+              var emptyEl = document.getElementById('rules-empty');
+              if (emptyEl) emptyEl.remove();
+              list.prepend(buildRuleCard(rule));
+            }
+            bindToggles();
+            closeModal();
+          } else {
+            errEl.textContent = result.d.error || 'Error al guardar.';
+            errEl.classList.remove('hidden');
+          }
+        })
+        .catch(function() {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Guardar regla';
+          errEl.textContent = 'Error de conexión.';
+          errEl.classList.remove('hidden');
+        });
+    }
+  });
+
+  // ── Toggles ────────────────────────────────────────────────────────────────
+  function bindToggles() {
+    document.querySelectorAll('.rule-toggle').forEach(function(toggle) {
+      toggle.onchange = function() {
+        var id = toggle.dataset.id;
+        var active = toggle.checked;
+        fetch('/api/remarketing/rules/' + id, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: active }),
+        })
+          .then(function(r) { return r.json(); })
+          .then(function() {
+            var card = document.querySelector('.rule-card[data-id="' + id + '"]');
+            if (!card) return;
+            var badge = card.querySelector('.rule-status-badge');
+            if (badge) {
+              badge.textContent = active ? '● Activa' : '○ Pausada';
+              badge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold rule-status-badge ' + (active ? 'bg-green-500/20 text-green-400' : 'bg-[#2a2a3a] text-[var(--color-text-secondary)]');
+            }
+          })
+          .catch(function() { toggle.checked = !active; });
+      };
+    });
+  }
+  bindToggles();
+
+  // ── Send Now modal ─────────────────────────────────────────────────────────
+  var _sendChannel = 'whatsapp';
+
+  function setChannel(ch) {
+    _sendChannel = ch;
+    var waBtn = document.getElementById('channel-whatsapp');
+    var smsBtn = document.getElementById('channel-sms');
+    var mediaRow = document.getElementById('send-media-row');
+    if (ch === 'whatsapp') {
+      waBtn.className = 'channel-btn flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all border-[#25D366] bg-[#25D366]/10 text-white';
+      smsBtn.className = 'channel-btn flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all border-[var(--color-border)] bg-[#1a1a25] text-[var(--color-text-secondary)]';
+      if (mediaRow) mediaRow.classList.remove('hidden');
+    } else {
+      smsBtn.className = 'channel-btn flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all border-[#2563eb] bg-[#2563eb]/10 text-white';
+      waBtn.className = 'channel-btn flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all border-[var(--color-border)] bg-[#1a1a25] text-[var(--color-text-secondary)]';
+      if (mediaRow) mediaRow.classList.add('hidden'); // SMS media not shown
+    }
+  }
+
+  document.getElementById('channel-whatsapp')?.addEventListener('click', function() { setChannel('whatsapp'); });
+  document.getElementById('channel-sms')?.addEventListener('click', function() { setChannel('sms'); });
+
+  function openSendModal() {
+    _sendChannel = 'whatsapp';
+    setChannel('whatsapp');
+    document.getElementById('send-to').value = '+57';
+    document.getElementById('send-message').value = '';
+    document.getElementById('send-media-url').value = '';
+    document.getElementById('send-error').classList.add('hidden');
+    document.getElementById('send-success').classList.add('hidden');
+    document.getElementById('send-char-count').textContent = '0';
+    document.getElementById('send-modal').classList.remove('hidden');
+    var toInput = document.getElementById('send-to');
+    toInput.focus();
+    toInput.setSelectionRange(toInput.value.length, toInput.value.length);
+  }
+
+  function closeSendModal() {
+    document.getElementById('send-modal').classList.add('hidden');
+  }
+
+  var sendNowBtn = document.getElementById('btn-send-now');
+  if (sendNowBtn) sendNowBtn.addEventListener('click', openSendModal);
+
+  document.getElementById('send-modal-close')?.addEventListener('click', closeSendModal);
+  document.getElementById('send-modal-cancel')?.addEventListener('click', closeSendModal);
+  document.getElementById('send-modal-backdrop')?.addEventListener('click', closeSendModal);
+
+  // Char counter
+  document.getElementById('send-message')?.addEventListener('input', function() {
+    document.getElementById('send-char-count').textContent = String(this.value.length);
+  });
+
+  document.getElementById('btn-do-send')?.addEventListener('click', function() {
+    var to = document.getElementById('send-to').value.trim();
+    var message = document.getElementById('send-message').value.trim();
+    var mediaUrl = document.getElementById('send-media-url').value.trim();
+    var errEl = document.getElementById('send-error');
+    var successEl = document.getElementById('send-success');
+    var btn = document.getElementById('btn-do-send');
+
+    errEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    if (!to || !message) {
+      errEl.textContent = 'El número y el mensaje son requeridos.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    fetch('/api/remarketing/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: to, message: message, media_url: mediaUrl || null, channel: _sendChannel }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+      .then(function(result) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar';
+        if (result.ok) {
+          successEl.classList.remove('hidden');
+          var d = result.d;
+          var detail = document.getElementById('send-success-detail');
+          var warn = document.getElementById('send-success-warn');
+          var link = document.getElementById('send-twilio-link');
+          if (detail) detail.textContent = 'SID: ' + (d.sid||'—') + ' · Estado: ' + (d.status||'—') + ' · De: ' + (d.from||'—') + ' → ' + (d.to||'—');
+          if (d.error_code && warn) {
+            warn.textContent = 'Twilio error ' + d.error_code + ': ' + (d.error_message || '');
+            warn.classList.remove('hidden');
+          }
+          if (d.sid && link) {
+            link.href = 'https://console.twilio.com/us1/monitor/logs/sms/' + d.sid;
+            link.classList.remove('hidden');
+          }
+          // Warn about trial accounts
+          if ((d.status === 'queued' || d.status === 'accepted') && warn && d.error_code === null) {
+            warn.textContent = 'Estado: queued — Si no llega, tu cuenta Twilio puede ser de prueba. Verifica en la consola.';
+            warn.classList.remove('hidden');
+          }
+          document.getElementById('send-to').value = '+57';
+          document.getElementById('send-message').value = '';
+          document.getElementById('send-media-url').value = '';
+          document.getElementById('send-char-count').textContent = '0';
+        } else {
+          errEl.textContent = result.d.error || 'Error al enviar.';
+          errEl.classList.remove('hidden');
+        }
+      })
+      .catch(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar';
+        errEl.textContent = 'Error de conexión.';
+        errEl.classList.remove('hidden');
+      });
+  });
+</script>

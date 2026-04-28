@@ -1,0 +1,27 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import AgendaView from '@/components/agenda/AgendaView';
+import { createAdminClient } from '@/lib/supabase';
+
+const barbershop = Astro.locals.barbershop!;
+const member = Astro.locals.member!;
+
+const admin = createAdminClient();
+const { data: barbers } = await admin
+  .from('members')
+  .select('id, display_name, avatar_url')
+  .eq('barbershop_id', barbershop.id)
+  .eq('is_active', true)
+  .order('display_name');
+
+const isOwner = member.role === 'owner';
+---
+
+<DashboardLayout title="Agenda">
+  <AgendaView
+    client:load
+    barbers={barbers ?? []}
+    isOwner={isOwner}
+    currentMemberId={member.id}
+  />
+</DashboardLayout>

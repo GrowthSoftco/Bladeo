@@ -1,0 +1,26 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import POSTerminal from '@/components/pos/POSTerminal';
+import { createAdminClient } from '@/lib/supabase';
+
+const barbershop = Astro.locals.barbershop!;
+const member = Astro.locals.member!;
+const isOwner = member.role === 'owner';
+
+const admin = createAdminClient();
+const { data: barbers } = await admin
+  .from('members')
+  .select('id, display_name')
+  .eq('barbershop_id', barbershop.id)
+  .eq('is_active', true)
+  .order('display_name');
+---
+
+<DashboardLayout title="Punto de Venta">
+  <POSTerminal
+    client:load
+    barbers={barbers ?? []}
+    currentMemberId={member.id}
+    isOwner={isOwner}
+  />
+</DashboardLayout>

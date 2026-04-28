@@ -1,0 +1,187 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { createAdminClient } from '@/lib/supabase';
+import { formatCOP, formatDate } from '@/lib/utils';
+
+const admin = createAdminClient();
+const barbershop = Astro.locals.barbershop;
+const member = Astro.locals.member;
+
+const today = new Date().toISOString().split('T')[0];
+
+// Fetch today's stats with admin client (bypasses RLS issues)
+const [appointmentsRes, salesRes] = await Promise.all([
+  admin.from('appointments')
+    .select('*, services(name, price), members!barber_id(display_name)')
+    .eq('barbershop_id', barbershop!.id)
+    .eq('date', today)
+    .neq('status', 'cancelled')
+    .order('start_time'),
+  admin.from('sales')
+    .select('total')
+    .eq('barbershop_id', barbershop!.id)
+    .gte('created_at', today),
+]);
+
+const todayAppointments = appointmentsRes.data ?? [];
+const todaySales = salesRes.data ?? [];
+const todayRevenue = todaySales.reduce((sum, s) => sum + (s.total ?? 0), 0);
+const pendingAppointments = todayAppointments.filter(a => a.status === 'pending' || a.status === 'confirmed').length;
+
+// New clients this week
+const weekStart = new Date();
+weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+const { data: newClients } = await admin
+  .from('clients')
+  .select('id', { count: 'exact' })
+  .eq('barbershop_id', barbershop!.id)
+  .gte('created_at', weekStart.toISOString());
+
+const todayFmt = new Date().toLocaleDateString('es-CO', {
+  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Bogota'
+});
+
+const statusColors: Record<string, string> = {
+  pending: 'bg-warning/20 text-warning border-warning/30',
+  confirmed: 'bg-brand/20 text-brand-light border-brand/30',
+  completed: 'bg-success/20 text-success border-success/30',
+  cancelled: 'bg-danger/20 text-danger border-danger/30',
+  no_show: 'bg-[var(--color-border)] text-[var(--color-text-secondary)] border-[var(--color-border)]',
+};
+
+const statusLabels: Record<string, string> = {
+  pending: 'Pendiente',
+  confirmed: 'Confirmada',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+  no_show: 'No asistió',
+};
+---
+
+<DashboardLayout title="Dashboard">
+  <!-- Welcome header -->
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-white mb-1">
+      Buen día, {member?.display_name?.split(' ')[0]} 👋
+    </h1>
+    <p class="text-[var(--color-text-secondary)] capitalize">{todayFmt}</p>
+  </div>
+
+  <!-- Stats cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Citas hoy</p>
+      <p class="text-3xl font-bold text-white">{todayAppointments.length}</p>
+      <p class="text-[var(--color-text-secondary)] text-xs mt-1">{pendingAppointments} pendientes</p>
+    </div>
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Ingresos hoy</p>
+      <p class="text-3xl font-bold text-white">{formatCOP(todayRevenue)}</p>
+      <p class="text-[var(--color-text-secondary)] text-xs mt-1">{todaySales.length} ventas</p>
+    </div>
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Clientes nuevos</p>
+      <p class="text-3xl font-bold text-white">{newClients?.length ?? 0}</p>
+      <p class="text-[var(--color-text-secondary)] text-xs mt-1">Esta semana</p>
+    </div>
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Citas pendientes</p>
+      <p class="text-3xl font-bold text-white">{pendingAppointments}</p>
+      <p class="text-[var(--color-text-secondary)] text-xs mt-1">Para hoy</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Today's appointments -->
+    <div class="lg:col-span-2 bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+        <h2 class="font-semibold text-white">Citas de hoy</h2>
+        <a href="/app/agenda" class="text-sm text-brand hover:text-brand-light transition-colors">Ver agenda →</a>
+      </div>
+      <div class="divide-y divide-[var(--color-border)]">
+        {todayAppointments.length === 0 ? (
+          <div class="flex flex-col items-center justify-center py-12 text-center">
+            <svg class="w-10 h-10 text-[#2a2a3a] mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <p class="text-[var(--color-text-secondary)] text-sm">No hay citas agendadas para hoy.</p>
+            <a href="/app/agenda" class="mt-3 text-sm text-brand hover:text-brand-light transition-colors">+ Nueva cita</a>
+          </div>
+        ) : (
+          todayAppointments.map(apt => (
+            <div class="flex items-center gap-4 px-6 py-4">
+              <div class="text-center w-14 flex-shrink-0">
+                <p class="text-sm font-semibold text-white">{apt.start_time?.slice(0, 5)}</p>
+                <p class="text-xs text-[var(--color-text-secondary)]">{apt.end_time?.slice(0, 5)}</p>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-white truncate">{apt.client_name}</p>
+                <p class="text-sm text-[var(--color-text-secondary)] truncate">{(apt as any).services?.name} · {(apt as any).members?.display_name}</p>
+              </div>
+              <span class={`text-xs font-medium px-2.5 py-1 rounded-full border ${statusColors[apt.status]}`}>
+                {statusLabels[apt.status]}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="space-y-4">
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <h2 class="font-semibold text-white mb-4">Acciones rápidas</h2>
+        <div class="space-y-2">
+          <a href="/app/agenda" class="flex items-center gap-3 px-4 py-3 bg-brand hover:bg-brand-light rounded-lg text-white text-sm font-medium transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Nueva cita
+          </a>
+          <a href="/app/pos" class="flex items-center gap-3 px-4 py-3 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white text-sm font-medium transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+            </svg>
+            Registrar venta
+          </a>
+          <a href="/app/clients" class="flex items-center gap-3 px-4 py-3 bg-[var(--color-surface-overlay)] hover:bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg text-white text-sm font-medium transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Agregar cliente
+          </a>
+        </div>
+      </div>
+
+      <!-- Barbershop info card -->
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <h2 class="font-semibold text-white mb-3">Tu barbería</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            <span>{barbershop?.city ?? 'Sin configurar'}</span>
+          </div>
+          {barbershop?.phone && (
+            <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.36 12 19.79 19.79 0 0 1 1.21 3.18 2 2 0 0 1 3.22 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16h0z"></path>
+              </svg>
+              <span>{barbershop.phone}</span>
+            </div>
+          )}
+          <div class="pt-2 border-t border-[var(--color-border)]">
+            <a href={`/b/${barbershop?.slug}`} target="_blank" class="text-brand hover:text-brand-light transition-colors text-xs">
+              Ver perfil público →
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>

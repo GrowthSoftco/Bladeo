@@ -1,0 +1,8 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import ClientsManager from '@/components/clients/ClientsManager';
+---
+
+<DashboardLayout title="Clientes">
+  <ClientsManager client:load />
+</DashboardLayout>

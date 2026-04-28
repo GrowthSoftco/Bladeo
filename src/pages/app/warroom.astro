@@ -1,0 +1,11 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import WarRoom from '@/components/warroom/WarRoom';
+---
+<DashboardLayout title="War Room">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-white mb-1">War Room</h1>
+    <p class="text-[var(--color-text-secondary)]">Métricas avanzadas y comparativas por período</p>
+  </div>
+  <WarRoom client:load />
+</DashboardLayout>

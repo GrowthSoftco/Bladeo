@@ -1,0 +1,11 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import ProductsManager from '@/components/products/ProductsManager';
+---
+<DashboardLayout title="Productos">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-white mb-1">Productos</h1>
+    <p class="text-[var(--color-text-secondary)]">Gestión de inventario y productos</p>
+  </div>
+  <ProductsManager client:load />
+</DashboardLayout>

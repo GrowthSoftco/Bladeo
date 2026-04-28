@@ -1,0 +1,172 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+
+// Redirect if already logged in
+const session = Astro.locals.user;
+if (session) {
+  return Astro.redirect('/app');
+}
+
+const error = Astro.url.searchParams.get('error');
+const message = Astro.url.searchParams.get('message');
+---
+
+<AuthLayout title="Iniciar sesión">
+  <div>
+    <h2 class="text-2xl font-bold text-white mb-1">Iniciar sesión</h2>
+    <p class="text-[#8888a0] mb-8">Ingresa tus credenciales para acceder.</p>
+
+    {error && (
+      <div class="mb-6 px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm">
+        {error === 'invalid_credentials' && 'Correo o contraseña incorrectos.'}
+        {error === 'no_member' && (
+          <span>
+            Tu cuenta no está vinculada a ninguna barbería.{' '}
+            <a href="/onboarding" class="font-semibold text-white underline hover:text-brand-light">Completa tu barbería aquí.</a>
+          </span>
+        )}
+        {error === 'server_error' && 'Ocurrió un error. Intenta de nuevo.'}
+        {!['invalid_credentials', 'no_member', 'server_error'].includes(error) && error}
+      </div>
+    )}
+
+    {message && (
+      <div class="mb-6 px-4 py-3 bg-success/10 border border-success/30 rounded-lg text-success text-sm">
+        {message === 'password_reset' && 'Contraseña actualizada. Ya puedes iniciar sesión.'}
+        {message === 'registered' && '¡Registro exitoso! Inicia sesión para continuar.'}
+        {!['password_reset', 'registered'].includes(message) && message}
+      </div>
+    )}
+
+    <form id="login-form" class="space-y-5">
+      <div>
+        <label for="email" class="block text-sm font-medium text-[#f0f0f5] mb-1.5">Correo electrónico</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          required
+          autocomplete="email"
+          placeholder="nombre@ejemplo.com"
+          class="w-full px-4 py-3 bg-[#1a1a25] border border-[#2a2a3a] rounded-lg text-white placeholder-[#8888a0] focus:outline-none focus:border-brand transition-colors"
+        />
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label for="password" class="block text-sm font-medium text-[#f0f0f5]">Contraseña</label>
+          <a href="/forgot-password" class="text-sm text-brand hover:text-brand-light transition-colors">¿Olvidaste tu contraseña?</a>
+        </div>
+        <div class="relative">
+          <input
+            type="password"
+            id="password"
+            name="password"
+            required
+            autocomplete="current-password"
+            placeholder="••••••••"
+            class="w-full px-4 py-3 bg-[#1a1a25] border border-[#2a2a3a] rounded-lg text-white placeholder-[#8888a0] focus:outline-none focus:border-brand transition-colors pr-12"
+          />
+          <button
+            type="button"
+            id="toggle-password"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8888a0] hover:text-white transition-colors"
+            aria-label="Ver contraseña"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="remember"
+          name="remember"
+          class="w-4 h-4 rounded border-[#2a2a3a] bg-[#1a1a25] text-brand focus:ring-brand focus:ring-offset-0"
+        />
+        <label for="remember" class="text-sm text-[#8888a0]">Recordarme</label>
+      </div>
+
+      <div id="error-banner" class="hidden px-4 py-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm"></div>
+
+      <button
+        type="submit"
+        id="submit-btn"
+        class="w-full py-3 px-6 bg-brand hover:bg-brand-light active:bg-brand-dark text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <span id="btn-text">Iniciar sesión</span>
+        <span id="btn-spinner" class="hidden">
+          <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        </span>
+      </button>
+    </form>
+
+    <p class="text-center text-[#8888a0] text-sm mt-6">
+      ¿No tienes cuenta?{' '}
+      <a href="/register" class="text-brand hover:text-brand-light font-medium transition-colors">Regístrate</a>
+    </p>
+  </div>
+</AuthLayout>
+
+<script>
+  import { supabase } from '@/lib/supabase';
+
+  const form = document.getElementById('login-form') as HTMLFormElement;
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
+  const btnText = document.getElementById('btn-text') as HTMLSpanElement;
+  const btnSpinner = document.getElementById('btn-spinner') as HTMLSpanElement;
+  const errorBanner = document.getElementById('error-banner') as HTMLDivElement;
+  const togglePassword = document.getElementById('toggle-password') as HTMLButtonElement;
+  const passwordInput = document.getElementById('password') as HTMLInputElement;
+
+  togglePassword.addEventListener('click', () => {
+    passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBanner.classList.add('hidden');
+
+    const email = (document.getElementById('email') as HTMLInputElement).value;
+    const password = passwordInput.value;
+
+    submitBtn.disabled = true;
+    btnText.textContent = 'Iniciando sesión...';
+    btnSpinner.classList.remove('hidden');
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      errorBanner.textContent = 'Correo o contraseña incorrectos. Verifica tus datos.';
+      errorBanner.classList.remove('hidden');
+      submitBtn.disabled = false;
+      btnText.textContent = 'Iniciar sesión';
+      btnSpinner.classList.add('hidden');
+      return;
+    }
+
+    if (data.session) {
+      // Set session with Supabase client directly
+      await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_in: data.session.expires_in,
+        expires_at: data.session.expires_at,
+        token_type: data.session.token_type,
+        type: data.session.type,
+      });
+
+      // Also store in cookies as backup
+      document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+      document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+      window.location.href = '/app';
+    }
+  });
+</script>
