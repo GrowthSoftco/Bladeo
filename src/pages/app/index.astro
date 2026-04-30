@@ -2,12 +2,15 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { createAdminClient } from '@/lib/supabase';
 import { formatCOP, formatDate } from '@/lib/utils';
+import OwnerUtilities from '@/components/dashboard/OwnerUtilities';
 
 const admin = createAdminClient();
 const barbershop = Astro.locals.barbershop;
 const member = Astro.locals.member;
 
 const today = new Date().toISOString().split('T')[0];
+
+const isBarber = member?.role === 'barber';
 
 // Fetch today's stats with admin client (bypasses RLS issues)
 const [appointmentsRes, salesRes] = await Promise.all([
@@ -17,19 +20,28 @@ const [appointmentsRes, salesRes] = await Promise.all([
     .eq('date', today)
     .neq('status', 'cancelled')
     .order('start_time'),
-  admin.from('sales')
-    .select('total')
-    .eq('barbershop_id', barbershop!.id)
-    .gte('created_at', today),
+  // Owners need barber commission info; barbers only need their own total
+  isBarber
+    ? admin.from('sales').select('total').eq('barbershop_id', barbershop!.id).gte('created_at', today)
+    : admin.from('sales').select('total, barber_id, members!barber_id(id, display_name, commission_pct)').eq('barbershop_id', barbershop!.id).gte('created_at', today),
 ]);
 
 const todayAppointments = appointmentsRes.data ?? [];
 const todaySales = salesRes.data ?? [];
-const todayRevenue = todaySales.reduce((sum, s) => sum + (s.total ?? 0), 0);
+const todayRevenue = todaySales.reduce((sum, s) => sum + ((s as any).total ?? 0), 0);
 const pendingAppointments = todayAppointments.filter(a => a.status === 'pending' || a.status === 'confirmed').length;
 
-// Barber earnings: own sales × commission_pct
-const isBarber = member?.role === 'barber';
+// Owner: build sales array for OwnerUtilities component
+const ownerSalesData = !isBarber
+  ? (todaySales as any[]).map(s => ({
+      total: s.total ?? 0,
+      barber_id: s.barber_id ?? null,
+      barber_name: s.members?.display_name ?? 'Sin asignar',
+      commission_pct: s.members?.commission_pct ?? 0,
+    }))
+  : [];
+
+// Barber: own earnings via commission
 let barberEarnings = 0;
 let barberSalesCount = 0;
 if (isBarber) {
@@ -114,6 +126,13 @@ const statusLabels: Record<string, string> = {
       <p class="text-[var(--color-text-secondary)] text-xs mt-1">Para hoy</p>
     </div>
   </div>
+
+  <!-- Owner utilities breakdown with barber filter -->
+  {!isBarber && (
+    <div class="mb-8">
+      <OwnerUtilities sales={ownerSalesData} client:load />
+    </div>
+  )}
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Today's appointments -->
