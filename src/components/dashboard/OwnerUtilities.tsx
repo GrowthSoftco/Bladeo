@@ -28,7 +28,6 @@ function calcCuts(list: BarberSale[]) {
 export default function OwnerUtilities({ sales }: Props) {
   const [selectedBarber, setSelectedBarber] = useState<string>('all');
 
-  // Unique barber list from sales
   const barbers = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of sales) {
@@ -37,16 +36,13 @@ export default function OwnerUtilities({ sales }: Props) {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [sales]);
 
-  // Filtered sales (for the selected barber)
   const filtered = useMemo(() =>
     selectedBarber === 'all' ? sales : sales.filter(s => s.barber_id === selectedBarber),
     [sales, selectedBarber]
   );
 
   const isFiltered = selectedBarber !== 'all';
-  const filteredMetrics = useMemo(() => calcCuts(filtered), [filtered]);
-  const globalMetrics  = useMemo(() => calcCuts(sales),    [sales]);
-
+  const metrics = useMemo(() => calcCuts(filtered), [filtered]);
   const selectedName = barbers.find(b => b.id === selectedBarber)?.name ?? 'Barbero';
 
   return (
@@ -67,63 +63,44 @@ export default function OwnerUtilities({ sales }: Props) {
         </select>
       </div>
 
-      {/* ── Filtered metrics (always visible) ── */}
+      {/* Métricas filtradas */}
       {isFiltered && (
         <p className="text-[var(--color-text-secondary)] text-xs mb-3 font-medium">
           📊 {selectedName}
         </p>
       )}
+
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-4">
-          <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-2">
-            {isFiltered ? 'Mis utilidades' : 'Mis utilidades'}
-          </p>
-          <p className="text-2xl font-bold text-[var(--color-brand-light)]">
-            {formatCOP(filteredMetrics.ownerCut)}
-          </p>
+          <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-2">Mis utilidades</p>
+          <p className="text-2xl font-bold text-[var(--color-brand-light)]">{formatCOP(metrics.ownerCut)}</p>
           <p className="text-[var(--color-text-secondary)] text-xs mt-1">
             {filtered.length} {filtered.length === 1 ? 'venta' : 'ventas'}
-            {isFiltered && ' de este barbero'}
           </p>
         </div>
         <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-4">
-          <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-2">
-            Utilidades barberos
-          </p>
-          <p className="text-2xl font-bold text-[var(--color-success)]">
-            {formatCOP(filteredMetrics.barberCut)}
-          </p>
+          <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-2">Utilidades barberos</p>
+          <p className="text-2xl font-bold text-[var(--color-success)]">{formatCOP(metrics.barberCut)}</p>
           <p className="text-[var(--color-text-secondary)] text-xs mt-1">
             {isFiltered ? selectedName : 'Todos los barberos'}
           </p>
         </div>
       </div>
 
-      {/* ── Totalization (only when a barber is selected) ── */}
-      {isFiltered && (
-        <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
-          <p className="text-[var(--color-text-secondary)] text-xs mb-3 font-medium">🧾 Total global</p>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-3 text-center">
-              <p className="text-[var(--color-text-secondary)] text-[10px] uppercase tracking-wide mb-1">Ingresos</p>
-              <p className="text-base font-bold text-white">{formatCOP(globalMetrics.total)}</p>
-              <p className="text-[var(--color-text-secondary)] text-[10px] mt-0.5">{sales.length} ventas</p>
-            </div>
-            <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-3 text-center">
-              <p className="text-[var(--color-text-secondary)] text-[10px] uppercase tracking-wide mb-1">Mis utilidades</p>
-              <p className="text-base font-bold text-[var(--color-brand-light)]">{formatCOP(globalMetrics.ownerCut)}</p>
-              <p className="text-[var(--color-text-secondary)] text-[10px] mt-0.5">total del día</p>
-            </div>
-            <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-3 text-center">
-              <p className="text-[var(--color-text-secondary)] text-[10px] uppercase tracking-wide mb-1">Barberos</p>
-              <p className="text-base font-bold text-[var(--color-success)]">{formatCOP(globalMetrics.barberCut)}</p>
-              <p className="text-[var(--color-text-secondary)] text-[10px] mt-0.5">todos</p>
-            </div>
-          </div>
+      {/* Totalización = utilidades dueño + utilidades barbero (basada en el filtro) */}
+      <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+        <div className="flex items-center justify-between">
+          <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide">
+            Total {isFiltered ? selectedName : 'del día'}
+          </p>
+          <p className="text-lg font-bold text-white">{formatCOP(metrics.total)}</p>
         </div>
-      )}
+        <p className="text-[var(--color-text-secondary)] text-[10px] mt-1">
+          {formatCOP(metrics.ownerCut)} tuyo + {formatCOP(metrics.barberCut)} barbero{isFiltered ? '' : 's'}
+        </p>
+      </div>
 
-      {/* ── Per-barber breakdown (only when showing all and >1 barber) ── */}
+      {/* Desglose por barbero (solo cuando se ven todos y hay más de uno) */}
       {!isFiltered && barbers.length > 1 && (
         <div className="mt-4 pt-4 border-t border-[var(--color-border)] space-y-2">
           {barbers.map(barber => {
@@ -151,9 +128,7 @@ export default function OwnerUtilities({ sales }: Props) {
       )}
 
       {sales.length === 0 && (
-        <p className="text-center text-[var(--color-text-secondary)] text-xs mt-4">
-          Sin ventas registradas hoy.
-        </p>
+        <p className="text-center text-[var(--color-text-secondary)] text-xs mt-4">Sin ventas registradas hoy.</p>
       )}
     </div>
   );

@@ -966,10 +966,20 @@ const memberRole = isOwner ? 'Dueño' : 'Barbero';
 
     function playNotifSound() {
       try {
-        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        var ctx = _audioCtx;
         var sound = 'bladeo';
         try { sound = localStorage.getItem('_bladeo_notif_sound') || 'bladeo'; } catch(e) {}
+
+        // Custom audio file stored as base64 data URL
+        if (sound === 'custom') {
+          try {
+            var dataUrl = localStorage.getItem('_bladeo_notif_sound_custom');
+            if (dataUrl) { new Audio(dataUrl).play(); return; }
+          } catch(e) {}
+          sound = 'bladeo'; // fallback if no data
+        }
+
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var ctx = _audioCtx;
         var doPlay = function() {
           var t = ctx.currentTime;
           if (sound === 'campana') {
@@ -982,7 +992,6 @@ const memberRole = isOwner ? 'Dueño' : 'Barbero';
           } else if (sound === 'suave') {
             _playTone(ctx, 528, t, 0.60);
           } else {
-            // bladeo (default)
             _playTone(ctx, 880,     t,        0.25);
             _playTone(ctx, 1174.66, t + 0.18, 0.30);
           }

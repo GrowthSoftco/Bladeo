@@ -67,28 +67,40 @@ export const GET: APIRoute = async ({ url }) => {
   }
 
   // Get existing appointments for this barber on this date
-  const { data: existing } = await admin
-    .from('appointments')
-    .select('start_time, end_time')
-    .eq('barbershop_id', barbershopId)
-    .eq('barber_id', barberId)
-    .eq('date', date)
-    .neq('status', 'cancelled')
-    .neq('status', 'no_show');
+  // Get existing appointments + blocks for this barber on this date
+  const [{ data: existing }, { data: blocksData }] = await Promise.all([
+    admin.from('appointments')
+      .select('start_time, end_time')
+      .eq('barbershop_id', barbershopId)
+      .eq('barber_id', barberId)
+      .eq('date', date)
+      .neq('status', 'cancelled')
+      .neq('status', 'no_show'),
+    admin.from('barber_blocks')
+      .select('start_time, end_time')
+      .eq('barbershop_id', barbershopId)
+      .eq('barber_id', barberId)
+      .eq('date', date),
+  ]);
 
-  // Filter out occupied slots
-  const occupied = (existing ?? []).map((a: any) => {
-    const [sh, sm] = a.start_time.split(':').map(Number);
-    const [eh, em] = a.end_time.split(':').map(Number);
-    return { start: sh * 60 + sm, end: eh * 60 + em };
-  });
+  // Full-day block → barber completely unavailable
+  const hasFullDayBlock = (blocksData ?? []).some((b: any) => b.start_time === null);
+  if (hasFullDayBlock) {
+    return new Response(JSON.stringify({ slots: [], closed: true, blockedDay: true }), { status: 200 });
+  }
+
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+  // Occupied ranges = appointments + partial blocks
+  const occupied = [
+    ...(existing ?? []).map((a: any) => ({ start: toMin(a.start_time), end: toMin(a.end_time) })),
+    ...(blocksData ?? []).filter((b: any) => b.start_time !== null)
+      .map((b: any) => ({ start: toMin(b.start_time), end: toMin(b.end_time) })),
+  ];
 
   const available = allSlots.filter(slot => {
-    const [sh, sm] = slot.split(':').map(Number);
-    const slotStart = sh * 60 + sm;
+    const slotStart = toMin(slot);
     const slotEnd = slotStart + slotDuration;
-
-    // Check if this slot overlaps with any existing appointment
     return !occupied.some(a => slotStart < a.end && slotEnd > a.start);
   });
 

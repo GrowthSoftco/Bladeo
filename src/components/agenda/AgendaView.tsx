@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import BlockModal from './BlockModal';
+
+interface Block {
+  id: string; barber_id: string; date: string;
+  start_time: string | null; end_time: string | null; reason: string | null;
+}
 
 interface Member { id: string; display_name: string; avatar_url: string | null; }
 interface Service { id: string; name: string; price: number; duration_minutes: number; is_active?: boolean; }
@@ -44,8 +50,10 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
   const [clientsLoaded, setClientsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showBlockModal, setShowBlockModal] = useState(false);
   const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
   const [savingStatus, setSavingStatus] = useState('');
+  const [blocks, setBlocks] = useState<Block[]>([]);
 
   // New appointment form
   const [form, setForm] = useState({
@@ -59,6 +67,13 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
 
   const dateStr = toDateStr(currentDate);
 
+  const fetchBlocks = useCallback(async () => {
+    const barberId = isOwner ? '' : `&barber_id=${currentMemberId}`;
+    const res = await fetch(`/api/blocks?date=${dateStr}${barberId}`);
+    const data = await res.json();
+    setBlocks(Array.isArray(data) ? data : []);
+  }, [dateStr, isOwner, currentMemberId]);
+
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
     let url = `/api/appointments?date=${dateStr}`;
@@ -68,11 +83,11 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
       const end = new Date(start); end.setDate(end.getDate() + 6);
       url = `/api/appointments?start=${toDateStr(start)}&end=${toDateStr(end)}`;
     }
-    const res = await fetch(url);
-    const data = await res.json();
+    const [aptsRes] = await Promise.all([fetch(url), fetchBlocks()]);
+    const data = await aptsRes.json();
     setAppointments(data ?? []);
     setLoading(false);
-  }, [dateStr, view]);
+  }, [dateStr, view, fetchBlocks]);
 
   useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
 
@@ -168,6 +183,11 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
   }
 
   const todayStr = toDateStr(new Date());
+
+  // Blocks for the current day view
+  const dayBlocks = blocks.filter(b => b.date === dateStr);
+  const hasFullDayBlock = dayBlocks.some(b => b.start_time === null);
+
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(currentDate);
     d.setDate(d.getDate() - d.getDay() + 1 + i);
@@ -200,9 +220,16 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
             <button onClick={() => setView('day')} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${view === 'day' ? 'bg-[var(--color-brand)] text-white' : 'text-[var(--color-text-secondary)] hover:text-white'}`}>Día</button>
             <button onClick={() => setView('week')} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${view === 'week' ? 'bg-[var(--color-brand)] text-white' : 'text-[var(--color-text-secondary)] hover:text-white'}`}>Semana</button>
           </div>
-          <button onClick={() => openNewAppointment()} className="px-4 py-2 bg-[var(--color-brand)] hover:bg-[var(--color-brand-light)] text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap">
-            + Nueva cita
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowBlockModal(true)}
+              className="px-4 py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              Bloquear
+            </button>
+            <button onClick={() => openNewAppointment()} className="px-4 py-2 bg-[var(--color-brand)] hover:bg-[var(--color-brand-light)] text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap">
+              + Nueva cita
+            </button>
+          </div>
         </div>
       </div>
 
@@ -261,7 +288,33 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
             <div className="p-6 space-y-2">{[1,2,3].map(i => <div key={i} className="h-16 bg-[var(--color-surface-overlay)] rounded-lg animate-pulse" />)}</div>
           ) : (
             <div className="divide-y divide-[var(--color-border)]">
-              {dayApts.length === 0 && (
+              {/* Full-day block banner */}
+              {hasFullDayBlock && (
+                <div className="flex items-center gap-3 px-6 py-3 bg-red-500/10 border-b border-red-500/20">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  <p className="text-red-400 text-sm font-medium">
+                    {dayBlocks.filter(b => b.start_time === null).map(b => b.reason ?? 'Día bloqueado').join(' · ')}
+                  </p>
+                </div>
+              )}
+              {/* Partial-time blocks */}
+              {dayBlocks.filter(b => b.start_time !== null).map(blk => (
+                <div key={blk.id} className="flex items-center gap-4 px-6 py-4 bg-red-500/5">
+                  <div className="text-center w-14 flex-shrink-0">
+                    <p className="text-sm font-semibold text-red-400">{blk.start_time!.slice(0,5)}</p>
+                    <p className="text-xs text-red-400/70">{blk.end_time!.slice(0,5)}</p>
+                  </div>
+                  <div className="w-1 h-10 rounded-full bg-red-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-red-400 text-sm">🚫 Bloqueado</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] truncate">
+                      {isOwner && barbers.find(b => b.id === blk.barber_id)?.display_name}
+                      {blk.reason ? (isOwner ? ` · ${blk.reason}` : blk.reason) : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {dayApts.length === 0 && dayBlocks.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <svg className="w-10 h-10 text-[var(--color-border)] mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
@@ -495,6 +548,18 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
             </form>
           </div>
         </div>
+      )}
+
+      {/* Block modal */}
+      {showBlockModal && (
+        <BlockModal
+          barbers={barbers}
+          isOwner={isOwner}
+          currentMemberId={currentMemberId}
+          initialDate={dateStr}
+          onClose={() => setShowBlockModal(false)}
+          onSaved={() => fetchBlocks()}
+        />
       )}
     </div>
   );

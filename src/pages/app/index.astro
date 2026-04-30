@@ -3,7 +3,6 @@ import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { createAdminClient } from '@/lib/supabase';
 import { formatCOP, formatDate } from '@/lib/utils';
 import OwnerUtilities from '@/components/dashboard/OwnerUtilities';
-import NotificationSoundPicker from '@/components/dashboard/NotificationSoundPicker';
 
 const admin = createAdminClient();
 const barbershop = Astro.locals.barbershop;
@@ -200,11 +199,6 @@ const statusLabels: Record<string, string> = {
           </a>
         </div>
       </div>
-
-      <!-- Notification sound picker (owners only) -->
-      {!isBarber && (
-        <NotificationSoundPicker client:load />
-      )}
 
       <!-- Barbershop info card -->
       <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
