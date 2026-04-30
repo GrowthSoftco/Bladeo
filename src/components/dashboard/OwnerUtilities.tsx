@@ -15,41 +15,44 @@ function formatCOP(n: number) {
   return '$' + Math.round(n).toLocaleString('es-CO').replace(/,/g, '.');
 }
 
+function calcCuts(list: BarberSale[]) {
+  let ownerCut = 0, barberCut = 0;
+  for (const s of list) {
+    const pct = s.commission_pct / 100;
+    barberCut += s.total * pct;
+    ownerCut  += s.total * (1 - pct);
+  }
+  return { ownerCut, barberCut, total: ownerCut + barberCut };
+}
+
 export default function OwnerUtilities({ sales }: Props) {
   const [selectedBarber, setSelectedBarber] = useState<string>('all');
 
-  // Build unique barber list from sales
+  // Unique barber list from sales
   const barbers = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of sales) {
-      if (s.barber_id && !map.has(s.barber_id)) {
-        map.set(s.barber_id, s.barber_name);
-      }
+      if (s.barber_id && !map.has(s.barber_id)) map.set(s.barber_id, s.barber_name);
     }
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [sales]);
 
-  // Filter sales by selected barber
+  // Filtered sales (for the selected barber)
   const filtered = useMemo(() =>
     selectedBarber === 'all' ? sales : sales.filter(s => s.barber_id === selectedBarber),
     [sales, selectedBarber]
   );
 
-  // Calculate metrics
-  const { ownerCut, barberCut, salesCount } = useMemo(() => {
-    let ownerCut = 0;
-    let barberCut = 0;
-    for (const s of filtered) {
-      const pct = s.commission_pct / 100;
-      barberCut += s.total * pct;
-      ownerCut += s.total * (1 - pct);
-    }
-    return { ownerCut, barberCut, salesCount: filtered.length };
-  }, [filtered]);
+  const isFiltered = selectedBarber !== 'all';
+  const filteredMetrics = useMemo(() => calcCuts(filtered), [filtered]);
+  const globalMetrics  = useMemo(() => calcCuts(sales),    [sales]);
+
+  const selectedName = barbers.find(b => b.id === selectedBarber)?.name ?? 'Barbero';
 
   return (
     <div className="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-      {/* Header with filter */}
+
+      {/* Header + filter */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="font-semibold text-white text-sm">Utilidades del día</h2>
         <select
@@ -64,46 +67,69 @@ export default function OwnerUtilities({ sales }: Props) {
         </select>
       </div>
 
-      {/* Metrics row */}
+      {/* ── Filtered metrics (always visible) ── */}
+      {isFiltered && (
+        <p className="text-[var(--color-text-secondary)] text-xs mb-3 font-medium">
+          📊 {selectedName}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-4">
-        {/* Owner cut */}
         <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-4">
           <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-2">
-            Mis utilidades
+            {isFiltered ? 'Mis utilidades' : 'Mis utilidades'}
           </p>
           <p className="text-2xl font-bold text-[var(--color-brand-light)]">
-            {formatCOP(ownerCut)}
+            {formatCOP(filteredMetrics.ownerCut)}
           </p>
           <p className="text-[var(--color-text-secondary)] text-xs mt-1">
-            {salesCount} {salesCount === 1 ? 'venta' : 'ventas'}
+            {filtered.length} {filtered.length === 1 ? 'venta' : 'ventas'}
+            {isFiltered && ' de este barbero'}
           </p>
         </div>
-
-        {/* Barbers total cut */}
         <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-4">
           <p className="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-2">
             Utilidades barberos
           </p>
           <p className="text-2xl font-bold text-[var(--color-success)]">
-            {formatCOP(barberCut)}
+            {formatCOP(filteredMetrics.barberCut)}
           </p>
           <p className="text-[var(--color-text-secondary)] text-xs mt-1">
-            {selectedBarber === 'all' ? 'Todos los barberos' : barbers.find(b => b.id === selectedBarber)?.name}
+            {isFiltered ? selectedName : 'Todos los barberos'}
           </p>
         </div>
       </div>
 
-      {/* Per-barber breakdown (only when showing all) */}
-      {selectedBarber === 'all' && barbers.length > 1 && (
+      {/* ── Totalization (only when a barber is selected) ── */}
+      {isFiltered && (
+        <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+          <p className="text-[var(--color-text-secondary)] text-xs mb-3 font-medium">🧾 Total global</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-3 text-center">
+              <p className="text-[var(--color-text-secondary)] text-[10px] uppercase tracking-wide mb-1">Ingresos</p>
+              <p className="text-base font-bold text-white">{formatCOP(globalMetrics.total)}</p>
+              <p className="text-[var(--color-text-secondary)] text-[10px] mt-0.5">{sales.length} ventas</p>
+            </div>
+            <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-3 text-center">
+              <p className="text-[var(--color-text-secondary)] text-[10px] uppercase tracking-wide mb-1">Mis utilidades</p>
+              <p className="text-base font-bold text-[var(--color-brand-light)]">{formatCOP(globalMetrics.ownerCut)}</p>
+              <p className="text-[var(--color-text-secondary)] text-[10px] mt-0.5">total del día</p>
+            </div>
+            <div className="bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-lg p-3 text-center">
+              <p className="text-[var(--color-text-secondary)] text-[10px] uppercase tracking-wide mb-1">Barberos</p>
+              <p className="text-base font-bold text-[var(--color-success)]">{formatCOP(globalMetrics.barberCut)}</p>
+              <p className="text-[var(--color-text-secondary)] text-[10px] mt-0.5">todos</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Per-barber breakdown (only when showing all and >1 barber) ── */}
+      {!isFiltered && barbers.length > 1 && (
         <div className="mt-4 pt-4 border-t border-[var(--color-border)] space-y-2">
           {barbers.map(barber => {
-            const barberSales = sales.filter(s => s.barber_id === barber.id);
-            let bCut = 0, oCut = 0;
-            for (const s of barberSales) {
-              bCut += s.total * (s.commission_pct / 100);
-              oCut += s.total * (1 - s.commission_pct / 100);
-            }
-            const pct = barberSales[0]?.commission_pct ?? 0;
+            const bs = sales.filter(s => s.barber_id === barber.id);
+            const { ownerCut, barberCut } = calcCuts(bs);
+            const pct = bs[0]?.commission_pct ?? 0;
             return (
               <div key={barber.id} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
@@ -114,9 +140,9 @@ export default function OwnerUtilities({ sales }: Props) {
                   <span className="text-[var(--color-text-secondary)]">({pct}%)</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[var(--color-success)]">{formatCOP(bCut)}</span>
+                  <span className="text-[var(--color-success)]">{formatCOP(barberCut)}</span>
                   <span className="text-[var(--color-text-secondary)]">·</span>
-                  <span className="text-[var(--color-text-secondary)] text-[10px]">tuyo: {formatCOP(oCut)}</span>
+                  <span className="text-[var(--color-text-secondary)] text-[10px]">tuyo: {formatCOP(ownerCut)}</span>
                 </div>
               </div>
             );
@@ -124,10 +150,9 @@ export default function OwnerUtilities({ sales }: Props) {
         </div>
       )}
 
-      {salesCount === 0 && (
+      {sales.length === 0 && (
         <p className="text-center text-[var(--color-text-secondary)] text-xs mt-4">
-          Sin ventas registradas hoy
-          {selectedBarber !== 'all' && ' para este barbero'}.
+          Sin ventas registradas hoy.
         </p>
       )}
     </div>

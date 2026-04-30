@@ -968,10 +968,24 @@ const memberRole = isOwner ? 'Dueño' : 'Barbero';
       try {
         if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         var ctx = _audioCtx;
+        var sound = 'bladeo';
+        try { sound = localStorage.getItem('_bladeo_notif_sound') || 'bladeo'; } catch(e) {}
         var doPlay = function() {
           var t = ctx.currentTime;
-          _playTone(ctx, 880, t, 0.25);         // A5 — first ding
-          _playTone(ctx, 1174.66, t + 0.18, 0.3); // D6 — second ding (higher)
+          if (sound === 'campana') {
+            _playTone(ctx, 1046, t,        0.40);
+            _playTone(ctx, 880,  t + 0.30, 0.50);
+          } else if (sound === 'triple') {
+            _playTone(ctx, 1000, t,        0.12);
+            _playTone(ctx, 1000, t + 0.16, 0.12);
+            _playTone(ctx, 1200, t + 0.32, 0.18);
+          } else if (sound === 'suave') {
+            _playTone(ctx, 528, t, 0.60);
+          } else {
+            // bladeo (default)
+            _playTone(ctx, 880,     t,        0.25);
+            _playTone(ctx, 1174.66, t + 0.18, 0.30);
+          }
         };
         if (ctx.state === 'suspended') ctx.resume().then(doPlay).catch(function(){});
         else doPlay();
