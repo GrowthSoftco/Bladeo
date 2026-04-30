@@ -28,6 +28,22 @@ const todaySales = salesRes.data ?? [];
 const todayRevenue = todaySales.reduce((sum, s) => sum + (s.total ?? 0), 0);
 const pendingAppointments = todayAppointments.filter(a => a.status === 'pending' || a.status === 'confirmed').length;
 
+// Barber earnings: own sales × commission_pct
+const isBarber = member?.role === 'barber';
+let barberEarnings = 0;
+let barberSalesCount = 0;
+if (isBarber) {
+  const { data: barberSales } = await admin
+    .from('sales')
+    .select('total')
+    .eq('barbershop_id', barbershop!.id)
+    .eq('barber_id', member!.id)
+    .gte('created_at', today);
+  barberSalesCount = barberSales?.length ?? 0;
+  const barberRevenue = barberSales?.reduce((sum, s) => sum + (s.total ?? 0), 0) ?? 0;
+  barberEarnings = barberRevenue * ((member?.commission_pct ?? 0) / 100);
+}
+
 // New clients this week
 const weekStart = new Date();
 weekStart.setDate(weekStart.getDate() - weekStart.getDay());
@@ -74,11 +90,19 @@ const statusLabels: Record<string, string> = {
       <p class="text-3xl font-bold text-white">{todayAppointments.length}</p>
       <p class="text-[var(--color-text-secondary)] text-xs mt-1">{pendingAppointments} pendientes</p>
     </div>
-    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Ingresos hoy</p>
-      <p class="text-3xl font-bold text-white">{formatCOP(todayRevenue)}</p>
-      <p class="text-[var(--color-text-secondary)] text-xs mt-1">{todaySales.length} ventas</p>
-    </div>
+    {isBarber ? (
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Mis ganancias hoy</p>
+        <p class="text-3xl font-bold text-[var(--color-success)]">{formatCOP(barberEarnings)}</p>
+        <p class="text-[var(--color-text-secondary)] text-xs mt-1">{barberSalesCount} {barberSalesCount === 1 ? 'venta' : 'ventas'} · {member?.commission_pct ?? 0}% comisión</p>
+      </div>
+    ) : (
+      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+        <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Ingresos hoy</p>
+        <p class="text-3xl font-bold text-white">{formatCOP(todayRevenue)}</p>
+        <p class="text-[var(--color-text-secondary)] text-xs mt-1">{todaySales.length} ventas</p>
+      </div>
+    )}
     <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
       <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Clientes nuevos</p>
       <p class="text-3xl font-bold text-white">{newClients?.length ?? 0}</p>
