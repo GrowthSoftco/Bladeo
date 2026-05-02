@@ -33,8 +33,12 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
             <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5">Slug (URL pública)</label>
             <div class="flex">
               <span class="px-3 py-2.5 bg-[var(--color-surface)] border border-r-0 border-[var(--color-border)] rounded-l-lg text-[var(--color-text-secondary)] text-xs flex items-center">/b/</span>
-              <input type="text" name="slug" value={barbershop.slug} required class="flex-1 px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-r-lg text-white focus:outline-none focus:border-[var(--color-brand)] text-sm transition-colors" />
+              <input type="text" name="slug" id="slug-input" value={barbershop.slug} required
+                pattern="[a-z0-9\-]+"
+                title="Solo letras minúsculas, números y guiones"
+                class="flex-1 px-4 py-2.5 bg-[var(--color-surface-overlay)] border border-[var(--color-border)] rounded-r-lg text-white focus:outline-none focus:border-[var(--color-brand)] text-sm transition-colors" />
             </div>
+            <p class="text-[var(--color-text-secondary)] text-xs mt-1">Solo minúsculas, números y guiones. Ej: <span class="text-white">mi-barberia</span></p>
           </div>
         </div>
         <div>
@@ -183,6 +187,28 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
 </DashboardLayout>
 
 <script define:vars={{ barbershopId: barbershop.id }}>
+  // Slug sanitization: lowercase, spaces→hyphens, strip non-alphanumeric except hyphens
+  function sanitizeSlug(val) {
+    return val
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove accents
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9\-]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  var slugInput = document.getElementById('slug-input');
+  if (slugInput) {
+    slugInput.addEventListener('input', function() {
+      var sanitized = sanitizeSlug(slugInput.value);
+      if (slugInput.value !== sanitized) slugInput.value = sanitized;
+    });
+    slugInput.addEventListener('blur', function() {
+      slugInput.value = sanitizeSlug(slugInput.value);
+    });
+  }
+
   // Profile form
   var profileForm = document.getElementById('profile-form');
   if (profileForm) {
@@ -197,6 +223,16 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
       var formData = new FormData(form);
       var body = Object.fromEntries(formData.entries());
 
+      // Sanitize slug before sending
+      if (body.slug) body.slug = sanitizeSlug(String(body.slug));
+
+      if (!body.slug) {
+        alert('El slug no puede estar vacío.');
+        btn.disabled = false;
+        btn.textContent = originalText;
+        return;
+      }
+
       fetch('/api/barbershops/' + barbershopId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -205,6 +241,8 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
         .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, d: d }; }); })
         .then(function(result) {
           if (result.ok) {
+            // Update slug input with whatever DB returned
+            if (result.d.slug && slugInput) slugInput.value = result.d.slug;
             btn.textContent = '¡Guardado!';
             btn.classList.replace('bg-[var(--color-brand)]', 'bg-green-600');
             setTimeout(function() {
