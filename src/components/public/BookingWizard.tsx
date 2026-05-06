@@ -159,7 +159,7 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
         </div>
         {barbershop.whatsapp && (
           <a
-            href={`https://wa.me/57${barbershop.whatsapp.replace(/\D/g, '')}?text=Hola, acabo de reservar una cita para ${result.client_name} el ${selectedDate} a las ${toTimeLabel(selectedSlot)}`}
+            href={`https://wa.me/57${barbershop.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, acabo de reservar una cita para ${result.client_name} el ${selectedDate} a las ${toTimeLabel(selectedSlot)} con ${selectedBarber?.display_name ?? 'el barbero'}.`)}`}
             target="_blank"
             className="flex items-center justify-center gap-2 w-full py-3 bg-[#25d366] hover:bg-[#20bc5a] text-white font-semibold rounded-xl transition-colors mb-3"
           >

@@ -8,19 +8,9 @@ export default defineConfig({
   integrations: [react()],
   vite: {
     optimizeDeps: {
-      include: [
-        'react',
-        'react-dom',
-        'react-dom/client',
-        '@supabase/supabase-js',
-        'recharts',
-      ],
-    },
-    server: {
-      warmup: {
-        clientFiles: ['./src/components/**/*.tsx'],
-        ssrFiles: ['./src/pages/**/*.astro', './src/layouts/**/*.astro'],
-      },
+      // Disable automatic dep crawling — fixes esbuild crash on Node v25 + Vite 7
+      // Vite will still bundle deps on first request (lazy), just won't scan upfront
+      noDiscovery: true,
     },
   },
 });

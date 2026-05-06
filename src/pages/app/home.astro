@@ -1,0 +1,308 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { createAdminClient } from '@/lib/supabase';
+import { formatCOP } from '@/lib/utils';
+import type { Member, Barbershop, Subscription } from '@/lib/types';
+
+const member       = Astro.locals.member as Member;
+const barbershop   = Astro.locals.barbershop as Barbershop;
+const subscription = Astro.locals.subscription as Subscription;
+
+const isOwner  = member?.role === 'owner';
+const tier     = subscription?.tier ?? (subscription as any)?.plan_name ?? 'basic';
+const isPro    = tier === 'pro' || tier === 'elite';
+const isElite  = tier === 'elite';
+
+const admin = createAdminClient();
+const today = new Date().toISOString().split('T')[0];
+
+// Quick today stats
+const [appointmentsRes, salesTodayRes, pendingAdvancesRes] = await Promise.all([
+  admin.from('appointments')
+    .select('id, status', { count: 'exact' })
+    .eq('barbershop_id', barbershop!.id)
+    .eq('date', today)
+    .neq('status', 'cancelled'),
+
+  admin.from('sales')
+    .select('total')
+    .eq('barbershop_id', barbershop!.id)
+    .gte('created_at', `${today}T00:00:00`),
+
+  isOwner
+    ? admin.from('advances').select('amount').eq('barbershop_id', barbershop!.id).eq('status', 'approved')
+    : Promise.resolve({ data: [] }),
+]);
+
+const todayAppts    = appointmentsRes.data ?? [];
+const todaySales    = salesTodayRes.data   ?? [];
+const pendingAdv    = (pendingAdvancesRes.data ?? []).reduce((s: number, a: any) => s + Number(a.amount), 0);
+const todayRevenue  = todaySales.reduce((s: number, r: any) => s + Number(r.total), 0);
+const pending       = todayAppts.filter((a: any) => a.status === 'pending' || a.status === 'confirmed').length;
+
+const firstName = member?.display_name?.split(' ')[0] ?? 'Usuario';
+const todayFmt  = new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+
+// Announcements — can be expanded to come from a DB table in the future
+const announcements = [
+  {
+    id: 1,
+    tag: '🆕 Nuevo',
+    title: 'Módulo de Anticipos disponible',
+    body: 'Los barberos ya pueden solicitar anticipos de su liquidación. El administrador los aprueba y se descuentan automáticamente en Contabilidad.',
+    cta: 'Ir a Anticipos',
+    href: '/app/advances',
+    gradient: 'from-violet-600/30 to-indigo-600/20',
+    border: 'border-violet-500/30',
+  },
+  {
+    id: 2,
+    tag: '📅 Agenda',
+    title: 'Vista de mes disponible',
+    body: 'Ahora puedes ver todas las citas del mes en un solo vistazo. Navega entre días, semanas y meses desde la agenda.',
+    cta: 'Abrir agenda',
+    href: '/app/agenda',
+    gradient: 'from-blue-600/30 to-cyan-600/20',
+    border: 'border-blue-500/30',
+  },
+  {
+    id: 3,
+    tag: '📊 Contabilidad',
+    title: 'Filtra por barbero en contabilidad',
+    body: 'Consulta las ventas, ganancias y anticipos de cada barbero de forma individual desde el módulo de contabilidad.',
+    cta: 'Ver contabilidad',
+    href: '/app/accounting',
+    gradient: 'from-emerald-600/30 to-teal-600/20',
+    border: 'border-emerald-500/30',
+    ownerOnly: true,
+  },
+].filter(a => !a.ownerOnly || isOwner);
+
+// Quick access modules
+interface QuickLink { label: string; desc: string; href: string; icon: string; color: string; locked?: boolean }
+const quickLinks: QuickLink[] = [
+  { label: 'Agenda',        desc: 'Citas y horarios',        href: '/app/agenda',      icon: 'calendar',      color: 'blue' },
+  { label: 'POS',           desc: 'Registrar ventas',        href: '/app/pos',         icon: 'cart',          color: 'green' },
+  { label: 'Clientes',      desc: 'Gestión de clientes',     href: '/app/clients',     icon: 'users',         color: 'purple' },
+  { label: 'Productos',     desc: 'Inventario',              href: '/app/products',    icon: 'box',           color: 'orange', locked: !isPro },
+  { label: 'Servicios',     desc: 'Catálogo de servicios',   href: '/app/services',    icon: 'scissors',      color: 'pink' },
+  { label: 'Contabilidad',  desc: 'Finanzas y reportes',     href: '/app/accounting',  icon: 'chart',         color: 'teal',   locked: !isPro || !isOwner },
+  { label: 'Anticipos',     desc: 'Liquidación anticipada',  href: '/app/advances',    icon: 'dollar',        color: 'yellow', locked: !isPro },
+  { label: 'Re-Marketing',  desc: 'Campañas y mensajes',     href: '/app/remarketing', icon: 'megaphone',     color: 'red',    locked: !isPro || !isOwner },
+  { label: 'Equipo',        desc: 'Gestión de barberos',     href: '/app/team',        icon: 'team',          color: 'indigo', locked: !isOwner },
+  { label: 'Galería',       desc: 'Fotos del negocio',       href: '/app/gallery',     icon: 'image',         color: 'rose',   locked: !isPro },
+  { label: 'War Room',      desc: 'Análisis avanzado',       href: '/app/warroom',     icon: 'trophy',        color: 'amber',  locked: !isElite || !isOwner },
+  { label: 'Corresponsal',  desc: 'Recaudo',                 href: '/app/banking',     icon: 'bank',          color: 'slate',  locked: !isElite || !isOwner },
+];
+
+const colorMap: Record<string, { bg: string; text: string; border: string }> = {
+  blue:   { bg: 'bg-blue-500/15',   text: 'text-blue-400',   border: 'border-blue-500/20' },
+  green:  { bg: 'bg-emerald-500/15',text: 'text-emerald-400',border: 'border-emerald-500/20' },
+  purple: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/20' },
+  orange: { bg: 'bg-orange-500/15', text: 'text-orange-400', border: 'border-orange-500/20' },
+  pink:   { bg: 'bg-pink-500/15',   text: 'text-pink-400',   border: 'border-pink-500/20' },
+  teal:   { bg: 'bg-teal-500/15',   text: 'text-teal-400',   border: 'border-teal-500/20' },
+  yellow: { bg: 'bg-yellow-500/15', text: 'text-yellow-400', border: 'border-yellow-500/20' },
+  red:    { bg: 'bg-red-500/15',    text: 'text-red-400',    border: 'border-red-500/20' },
+  indigo: { bg: 'bg-indigo-500/15', text: 'text-indigo-400', border: 'border-indigo-500/20' },
+  rose:   { bg: 'bg-rose-500/15',   text: 'text-rose-400',   border: 'border-rose-500/20' },
+  amber:  { bg: 'bg-amber-500/15',  text: 'text-amber-400',  border: 'border-amber-500/20' },
+  slate:  { bg: 'bg-slate-500/15',  text: 'text-slate-400',  border: 'border-slate-500/20' },
+};
+---
+
+<DashboardLayout title="Inicio">
+
+  <!-- Welcome -->
+  <div class="mb-8 flex items-center justify-between flex-wrap gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white mb-0.5">¡Hola, {firstName}! 👋</h1>
+      <p class="text-[var(--color-text-secondary)] text-sm capitalize">{todayFmt}</p>
+    </div>
+    <!-- Pill plan badge -->
+    <span class={`px-3 py-1 rounded-full text-xs font-semibold border ${isElite ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : isPro ? 'bg-[var(--color-brand)]/20 text-[var(--color-brand-light)] border-[var(--color-brand)]/30' : 'bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] border-[var(--color-border)]'}`}>
+      Plan {isElite ? 'Elite ✦' : isPro ? 'Pro' : 'Básico'}
+    </span>
+  </div>
+
+  <!-- Quick stats strip -->
+  <div class="grid grid-cols-3 gap-3 mb-8">
+    <a href="/app/agenda" class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl px-4 py-3 flex flex-col gap-1 hover:border-[var(--color-brand)]/40 transition-colors">
+      <p class="text-xs text-[var(--color-text-secondary)] font-medium">Citas hoy</p>
+      <p class="text-2xl font-bold text-white">{todayAppts.length}</p>
+      <p class="text-[10px] text-[var(--color-text-secondary)]">{pending} pendientes</p>
+    </a>
+    <a href="/app/pos" class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl px-4 py-3 flex flex-col gap-1 hover:border-[var(--color-brand)]/40 transition-colors">
+      <p class="text-xs text-[var(--color-text-secondary)] font-medium">Ventas hoy</p>
+      <p class="text-2xl font-bold text-white">{formatCOP(todayRevenue)}</p>
+      <p class="text-[10px] text-[var(--color-text-secondary)]">{todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}</p>
+    </a>
+    {isOwner ? (
+      <a href="/app/advances" class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl px-4 py-3 flex flex-col gap-1 hover:border-[var(--color-brand)]/40 transition-colors">
+        <p class="text-xs text-[var(--color-text-secondary)] font-medium">Anticipos pendientes</p>
+        <p class={`text-2xl font-bold ${pendingAdv > 0 ? 'text-amber-400' : 'text-white'}`}>{formatCOP(pendingAdv)}</p>
+        <p class="text-[10px] text-[var(--color-text-secondary)]">por descontar</p>
+      </a>
+    ) : (
+      <a href="/app/clients" class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl px-4 py-3 flex flex-col gap-1 hover:border-[var(--color-brand)]/40 transition-colors">
+        <p class="text-xs text-[var(--color-text-secondary)] font-medium">Ir a clientes</p>
+        <p class="text-2xl font-bold text-white">→</p>
+        <p class="text-[10px] text-[var(--color-text-secondary)]">Ver directorio</p>
+      </a>
+    )}
+  </div>
+
+  <!-- Announcements -->
+  {announcements.length > 0 && (
+    <div class="mb-8">
+      <p class="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">Novedades</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {announcements.map(a => (
+          <div class={`relative bg-gradient-to-br ${a.gradient} border ${a.border} rounded-2xl p-5 flex flex-col gap-3 overflow-hidden`}>
+            <!-- Background decoration -->
+            <div class="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/5 pointer-events-none"></div>
+            <div class="absolute -right-2 -bottom-4 w-16 h-16 rounded-full bg-white/5 pointer-events-none"></div>
+
+            <span class="text-xs font-semibold text-white/70">{a.tag}</span>
+            <div>
+              <h3 class="font-bold text-white text-sm leading-snug mb-1">{a.title}</h3>
+              <p class="text-white/60 text-xs leading-relaxed">{a.body}</p>
+            </div>
+            <a href={a.href} class="mt-auto self-start text-xs font-semibold text-white bg-white/15 hover:bg-white/25 transition-colors px-3 py-1.5 rounded-lg border border-white/20">
+              {a.cta} →
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- Quick access grid -->
+  <div class="mb-8">
+    <p class="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">Acceso rápido</p>
+    <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+      {quickLinks.map(link => {
+        const c = colorMap[link.color];
+        return (
+          <a
+            href={link.locked ? '#' : link.href}
+            class={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all text-center group ${
+              link.locked
+                ? 'bg-[var(--color-surface-elevated)] border-[var(--color-border)] opacity-50 cursor-not-allowed'
+                : `bg-[var(--color-surface-elevated)] border-[var(--color-border)] hover:border-[var(--color-brand)]/40 hover:bg-[var(--color-surface-overlay)]`
+            }`}
+          >
+            {link.locked && (
+              <span class="absolute top-1.5 right-1.5 text-[9px] font-bold bg-[var(--color-surface-overlay)] text-[var(--color-text-secondary)] border border-[var(--color-border)] px-1 rounded">
+                Pro
+              </span>
+            )}
+            <div class={`w-10 h-10 rounded-xl ${c.bg} border ${c.border} flex items-center justify-center ${c.text}`}>
+              {link.icon === 'calendar'  && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>}
+              {link.icon === 'cart'      && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>}
+              {link.icon === 'users'     && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>}
+              {link.icon === 'box'       && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>}
+              {link.icon === 'scissors'  && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>}
+              {link.icon === 'chart'     && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>}
+              {link.icon === 'dollar'    && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
+              {link.icon === 'megaphone' && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>}
+              {link.icon === 'team'      && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>}
+              {link.icon === 'image'     && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
+              {link.icon === 'trophy'    && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>}
+              {link.icon === 'bank'      && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>}
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-white leading-tight">{link.label}</p>
+              <p class="text-[10px] text-[var(--color-text-secondary)] leading-tight mt-0.5 hidden sm:block">{link.desc}</p>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  </div>
+
+  <!-- Bottom row: links útiles + perfil público -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+    <!-- Recursos útiles -->
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+      <h3 class="font-semibold text-white text-sm mb-4">Recursos útiles</h3>
+      <div class="space-y-2">
+        <a href={`/b/${barbershop?.slug}`} target="_blank" class="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors group">
+          <div class="flex items-center gap-3">
+            <div class="w-7 h-7 rounded-lg bg-[var(--color-brand)]/15 flex items-center justify-center text-[var(--color-brand-light)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-white">Mi página pública</p>
+              <p class="text-xs text-[var(--color-text-secondary)]">Comparte con tus clientes</p>
+            </div>
+          </div>
+          <svg class="text-[var(--color-text-secondary)] group-hover:text-white transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+        <a href="/app/settings" class="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors group">
+          <div class="flex items-center gap-3">
+            <div class="w-7 h-7 rounded-lg bg-[var(--color-surface-overlay)] flex items-center justify-center text-[var(--color-text-secondary)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-white">Configuración</p>
+              <p class="text-xs text-[var(--color-text-secondary)]">Horarios, perfil y tema</p>
+            </div>
+          </div>
+          <svg class="text-[var(--color-text-secondary)] group-hover:text-white transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </a>
+        {!isPro && isOwner && (
+          <a href="/app/plans" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[var(--color-brand)]/10 border border-[var(--color-brand)]/20 hover:bg-[var(--color-brand)]/20 transition-colors">
+            <div class="w-7 h-7 rounded-lg bg-[var(--color-brand)]/20 flex items-center justify-center text-[var(--color-brand-light)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-[var(--color-brand-light)]">Actualizar a Pro</p>
+              <p class="text-xs text-[var(--color-text-secondary)]">Desbloquea contabilidad, remarketing y más</p>
+            </div>
+          </a>
+        )}
+      </div>
+    </div>
+
+    <!-- Info barbería -->
+    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+      <h3 class="font-semibold text-white text-sm mb-4">Tu barbería</h3>
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 rounded-xl bg-[var(--color-brand)]/20 border border-[var(--color-brand)]/30 flex items-center justify-center flex-shrink-0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--color-brand-light)]">
+            <path d="M6 3l2 4-2 4 2 4-2 4"/><path d="M12 3v18"/><path d="M18 3l-2 4 2 4-2 4 2 4"/>
+          </svg>
+        </div>
+        <div>
+          <p class="font-bold text-white">{barbershop?.name ?? 'Mi Barbería'}</p>
+          <p class="text-xs text-[var(--color-text-secondary)]">{barbershop?.city ?? 'Sin ciudad'}</p>
+        </div>
+      </div>
+      <div class="space-y-2 text-sm">
+        {barbershop?.phone && (
+          <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.36 12 19.79 19.79 0 0 1 1.21 3.18 2 2 0 0 1 3.22 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16h0z"/></svg>
+            <span>{barbershop.phone}</span>
+          </div>
+        )}
+        <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span class="capitalize">{tier === 'basic' ? 'Plan Básico' : tier === 'pro' ? 'Plan Pro' : 'Plan Elite'}</span>
+        </div>
+        <div class="pt-3 border-t border-[var(--color-border)]">
+          <div class="flex items-center gap-2">
+            <a href={`/b/${barbershop?.slug}`} target="_blank" class="text-xs text-[var(--color-brand-light)] hover:underline flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Ver perfil público
+            </a>
+            <span class="text-[var(--color-border)]">·</span>
+            <a href="/app/settings" class="text-xs text-[var(--color-text-secondary)] hover:text-white transition-colors">Editar</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</DashboardLayout>
