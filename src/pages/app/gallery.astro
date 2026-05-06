@@ -1,19 +1,27 @@
 ---
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import GalleryManager from '@/components/gallery/GalleryManager';
+import { createAdminClient } from '@/lib/supabase';
+import type { Member } from '@/lib/types';
+
+const member = Astro.locals.member as Member;
+const barbershop = Astro.locals.barbershop;
+const isOwner = member?.role === 'owner';
+
+const admin = createAdminClient();
+const { data: barbers } = await admin
+  .from('members')
+  .select('id, display_name, avatar_url')
+  .eq('barbershop_id', barbershop.id)
+  .eq('is_active', true)
+  .order('display_name');
 ---
+
 <DashboardLayout title="Galería">
-  <div class="flex items-center justify-between mb-8">
-    <div>
-      <h1 class="text-2xl font-bold text-white mb-1">Galería</h1>
-      <p class="text-[var(--color-text-secondary)]">Fotos del trabajo de tu equipo</p>
-    </div>
-    <button class="px-4 py-2.5 bg-[#2563eb] hover:bg-[#3b82f6] text-white text-sm font-semibold rounded-lg transition-colors">
-      + Subir foto
-    </button>
-  </div>
-  <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-12 text-center">
-    <div class="text-4xl mb-4">🖼️</div>
-    <h3 class="text-lg font-semibold text-white mb-2">Galería de fotos</h3>
-    <p class="text-[var(--color-text-secondary)] text-sm">El módulo de galería se implementa en Phase 9.</p>
-  </div>
+  <GalleryManager
+    client:load
+    barbers={barbers ?? []}
+    isOwner={isOwner}
+    currentMemberId={member.id}
+  />
 </DashboardLayout>
