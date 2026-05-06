@@ -495,7 +495,7 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
               </p>
             )}
             <div className="flex items-center gap-3 text-xs text-[var(--color-text-secondary)]">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--color-success)] inline-block"/>Disponible</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--color-text-secondary)] inline-block"/>Disponible</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--color-brand)] inline-block"/>Ocupado</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"/>Bloqueado</span>
             </div>
@@ -518,14 +518,14 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
               {timeline.map((ev, i) => {
                 if (ev.kind === 'free') return (
                   <button key={i} onClick={() => openNewAppointment(dateStr, ev.start)}
-                    className="w-full flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-success)]/5 transition-colors text-left group">
+                    className="w-full flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-surface-overlay)] transition-colors text-left group">
                     <div className="text-center w-14 flex-shrink-0">
-                      <p className="text-sm font-semibold text-[var(--color-success)]">{ev.start}</p>
-                      <p className="text-xs text-[var(--color-success)]/60">{ev.end}</p>
+                      <p className="text-sm font-semibold text-[var(--color-text-secondary)]">{ev.start}</p>
+                      <p className="text-xs text-[var(--color-text-secondary)]/60">{ev.end}</p>
                     </div>
-                    <div className="w-0.5 h-8 rounded-full bg-[var(--color-success)]/30 flex-shrink-0 group-hover:bg-[var(--color-success)]/70 transition-colors" />
-                    <p className="flex-1 text-sm text-[var(--color-success)]/70 group-hover:text-[var(--color-success)] transition-colors">Disponible</p>
-                    <span className="text-xs text-[var(--color-success)]/50 group-hover:text-[var(--color-success)] transition-colors opacity-0 group-hover:opacity-100 font-medium">+ Agendar →</span>
+                    <div className="w-0.5 h-8 rounded-full bg-[var(--color-border)] flex-shrink-0 group-hover:bg-[var(--color-text-secondary)]/50 transition-colors" />
+                    <p className="flex-1 text-sm text-[var(--color-text-secondary)]/60 group-hover:text-[var(--color-text-secondary)] transition-colors">Disponible</p>
+                    <span className="text-xs text-[var(--color-text-secondary)]/50 group-hover:text-[var(--color-text-secondary)] transition-colors opacity-0 group-hover:opacity-100 font-medium">+ Agendar →</span>
                   </button>
                 );
                 if (ev.kind === 'block') return (
