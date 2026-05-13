@@ -31,6 +31,13 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 function formatCOP(n: number) { return '$' + Math.round(n).toLocaleString('es-CO').replace(/,/g, '.'); }
+function fmt12(t: string): string {
+  const [hStr, mStr] = t.slice(0, 5).split(':');
+  const h = parseInt(hStr, 10);
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${mStr}${ampm}`;
+}
 function addMinutes(time: string, mins: number): string {
   const [h, m] = time.split(':').map(Number);
   const total = h * 60 + m + mins;
@@ -466,7 +473,7 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-[var(--color-text-primary)] text-sm">{apt.client_name}</p>
-                        <p className="text-xs opacity-80">{apt.services?.name} · {apt.members?.display_name} · {apt.date} {apt.start_time.slice(0,5)}</p>
+                        <p className="text-xs opacity-80">{apt.services?.name} · {apt.members?.display_name} · {apt.date} {fmt12(apt.start_time)}</p>
                       </div>
                       <span className="text-xs font-medium">{STATUS_LABELS[apt.status]}</span>
                     </div>
@@ -480,7 +487,7 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
 
       {/* ── DAY VIEW ────────────────────────────────────────────────────────── */}
       {view === 'day' && (
-        <div className="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl overflow-hidden flex-1">
+        <div className="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col min-h-0">
 
           {/* Barber selector + legend */}
           <div className="px-6 py-3 border-b border-[var(--color-border)] flex items-center justify-between gap-3 flex-wrap">
@@ -514,14 +521,14 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
           {loading ? (
             <div className="p-6 space-y-2">{[1,2,3,4,5].map(i => <div key={i} className="h-14 bg-[var(--color-surface-overlay)] rounded-lg animate-pulse" />)}</div>
           ) : (
-            <div className="divide-y divide-[var(--color-border)]">
+            <div className="divide-y divide-[var(--color-border)] overflow-y-auto flex-1">
               {timeline.map((ev, i) => {
                 if (ev.kind === 'free') return (
                   <button key={i} onClick={() => openNewAppointment(dateStr, ev.start)}
                     className="w-full flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-surface-overlay)] transition-colors text-left group">
-                    <div className="text-center w-14 flex-shrink-0">
-                      <p className="text-sm font-semibold text-[var(--color-text-secondary)]">{ev.start}</p>
-                      <p className="text-xs text-[var(--color-text-secondary)]/60">{ev.end}</p>
+                    <div className="text-center w-12 flex-shrink-0">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">{fmt12(ev.start)}</p>
+                      <p className="text-[10px] text-[var(--color-text-secondary)]/60">{fmt12(ev.end)}</p>
                     </div>
                     <div className="w-0.5 h-8 rounded-full bg-[var(--color-border)] flex-shrink-0 group-hover:bg-[var(--color-text-secondary)]/50 transition-colors" />
                     <p className="flex-1 text-sm text-[var(--color-text-secondary)]/60 group-hover:text-[var(--color-text-secondary)] transition-colors">Disponible</p>
@@ -530,9 +537,9 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
                 );
                 if (ev.kind === 'block') return (
                   <div key={i} className="flex items-center gap-4 px-6 py-3.5 bg-red-500/5">
-                    <div className="text-center w-14 flex-shrink-0">
-                      <p className="text-sm font-semibold text-red-400">{ev.blk.start_time!.slice(0,5)}</p>
-                      <p className="text-xs text-red-400/60">{ev.blk.end_time!.slice(0,5)}</p>
+                    <div className="text-center w-12 flex-shrink-0">
+                      <p className="text-xs font-semibold text-red-400">{fmt12(ev.blk.start_time!)}</p>
+                      <p className="text-[10px] text-red-400/60">{fmt12(ev.blk.end_time!)}</p>
                     </div>
                     <div className="w-1 h-10 rounded-full bg-red-500 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -545,9 +552,9 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
                 return (
                   <button key={apt.id} onClick={() => setSelectedApt(apt)}
                     className="w-full flex items-center gap-4 px-6 py-3.5 hover:bg-[var(--color-surface-overlay)] transition-colors text-left">
-                    <div className="text-center w-14 flex-shrink-0">
-                      <p className="text-sm font-semibold text-[var(--color-text-primary)]">{apt.start_time.slice(0,5)}</p>
-                      <p className="text-xs text-[var(--color-text-secondary)]">{apt.end_time.slice(0,5)}</p>
+                    <div className="text-center w-12 flex-shrink-0">
+                      <p className="text-xs font-semibold text-[var(--color-text-primary)]">{fmt12(apt.start_time)}</p>
+                      <p className="text-[10px] text-[var(--color-text-secondary)]">{fmt12(apt.end_time)}</p>
                     </div>
                     <div className={`w-1 h-12 rounded-full flex-shrink-0 ${STATUS_COLORS[apt.status].split(' ')[1]?.replace('border-l-', 'bg-') ?? 'bg-[var(--color-text-secondary)]'}`} />
                     <div className="flex-1 min-w-0">
@@ -574,7 +581,7 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
             <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
               <div>
                 <h2 className="font-semibold text-[var(--color-text-primary)]">{selectedApt.client_name}</h2>
-                <p className="text-sm text-[var(--color-text-secondary)]">{selectedApt.date} · {selectedApt.start_time.slice(0,5)} — {selectedApt.end_time.slice(0,5)}</p>
+                <p className="text-sm text-[var(--color-text-secondary)]">{selectedApt.date} · {fmt12(selectedApt.start_time)} — {fmt12(selectedApt.end_time)}</p>
               </div>
               <button onClick={() => setSelectedApt(null)} className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

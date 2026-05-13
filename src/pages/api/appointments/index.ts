@@ -42,7 +42,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const admin = createAdminClient();
 
-  // Check for conflicts
+  // Check for conflicts — overlap requires BOTH: existing.start < new.end AND existing.end > new.start
   const { data: conflicts } = await admin
     .from('appointments')
     .select('id')
@@ -51,7 +51,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     .eq('date', date)
     .neq('status', 'cancelled')
     .neq('status', 'no_show')
-    .or(`start_time.lt.${end_time},end_time.gt.${start_time}`);
+    .lt('start_time', end_time)
+    .gt('end_time', start_time);
 
   if (conflicts && conflicts.length > 0)
     return new Response(JSON.stringify({ error: 'El barbero ya tiene una cita en ese horario.' }), { status: 409 });
