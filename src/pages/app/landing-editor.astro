@@ -1,0 +1,61 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import LandingEditor from '@/components/landing/LandingEditor';
+import type { Member } from '@/lib/types';
+
+const member = Astro.locals.member as Member;
+const barbershop = Astro.locals.barbershop;
+
+// Owner-only
+if (member?.role !== 'owner') {
+  return Astro.redirect('/app');
+}
+
+const DEFAULT_BLOCKS = [
+  { id: 'hero',     type: 'hero',     visible: true, content: { title: '', subtitle: '', cta_text: 'Reservar cita', cta_show: true } },
+  { id: 'services', type: 'services', visible: true, content: { heading: 'Servicios', show_book_btn: true } },
+  { id: 'gallery',  type: 'gallery',  visible: true, content: { heading: 'Nuestro trabajo' } },
+  { id: 'booking',  type: 'booking',  visible: true, content: { heading: 'Reserva tu cita' } },
+  { id: 'whatsapp', type: 'whatsapp', visible: true, content: { text: 'Reservar por WhatsApp' } },
+];
+
+let initialBlocks = DEFAULT_BLOCKS;
+let services: any[] = [];
+let galleryImages: any[] = [];
+
+try {
+  const { createAdminClient } = await import('@/lib/supabase');
+  const admin = createAdminClient();
+
+  const [blocksRes, svcRes, galleryRes] = await Promise.all([
+    admin.from('barbershops').select('landing_blocks').eq('id', barbershop.id).single(),
+    admin.from('services').select('id, name, price, duration_minutes, description').eq('barbershop_id', barbershop.id).eq('is_active', true).order('name'),
+    admin.from('gallery_images').select('id, image_url, caption').eq('barbershop_id', barbershop.id).order('created_at', { ascending: false }).limit(24),
+  ]);
+
+  if (Array.isArray(blocksRes.data?.landing_blocks) && blocksRes.data.landing_blocks.length > 0) {
+    initialBlocks = blocksRes.data.landing_blocks;
+  }
+
+  services = svcRes.data ?? [];
+  galleryImages = galleryRes.data ?? [];
+} catch (_) {
+  // fall back to defaults
+}
+---
+
+<DashboardLayout title="Editor de Landing">
+  <div style="height: calc(100vh - 4rem); margin: -2rem; overflow: hidden;">
+    <LandingEditor
+      client:load
+      barbershopId={barbershop.id}
+      barbershopName={barbershop.name}
+      barbershopSlug={barbershop.slug}
+      initialBlocks={initialBlocks}
+      barbershopCoverUrl={barbershop.cover_image_url ?? null}
+      barbershopLogoUrl={barbershop.logo_url ?? null}
+      services={services}
+      galleryImages={galleryImages}
+    />
+  </div>
+</DashboardLayout>

@@ -41,6 +41,7 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
   const [step, setStep] = useState<Step>('barber');
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [svcPreset, setSvcPreset] = useState(false); // service pre-selected from outside
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
   const [clientName, setClientName] = useState('');
@@ -52,6 +53,25 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [result, setResult] = useState<any>(null);
+
+  // Listen for "book this service" events dispatched by service cards
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { serviceId } = (e as CustomEvent<{ serviceId: string }>).detail;
+      const svc = services.find(s => s.id === serviceId);
+      if (!svc) return;
+      setSelectedService(svc);
+      setSvcPreset(true);
+      setSelectedBarber(null);
+      setSelectedDate('');
+      setSelectedSlot('');
+      setClientName(''); setClientPhone(''); setNotes('');
+      setResult(null); setBookingError('');
+      setStep('barber');
+    };
+    window.addEventListener('book-service', handler);
+    return () => window.removeEventListener('book-service', handler);
+  }, [services]);
 
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
@@ -98,6 +118,7 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
 
   const reset = () => {
     setStep('barber'); setSelectedBarber(null); setSelectedService(null);
+    setSvcPreset(false);
     setSelectedDate(''); setSelectedSlot(''); setClientName('');
     setClientPhone(''); setNotes(''); setResult(null); setBookingError('');
   };
@@ -112,7 +133,9 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
   const toDateStr = (y: number, m: number, d: number) =>
     `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  const stepOrder: Step[] = ['barber', 'service', 'date', 'time', 'info', 'confirm'];
+  const stepOrder: Step[] = svcPreset
+    ? ['barber', 'date', 'time', 'info', 'confirm']
+    : ['barber', 'service', 'date', 'time', 'info', 'confirm'];
   const stepIdx = stepOrder.indexOf(step);
 
   const StepBar = () => (
@@ -188,12 +211,20 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
         {step === 'barber' && (
           <div>
             <p className="text-xs font-semibold text-[#888] uppercase tracking-widest mb-1">Paso 1</p>
-            <h3 className="text-lg font-bold text-[#1a1818] mb-5">¿Con quién quieres cortarte?</h3>
+            <h3 className="text-lg font-bold text-[#1a1818] mb-2">¿Con quién quieres cortarte?</h3>
+            {svcPreset && selectedService && (
+              <div className="flex items-center gap-2 mb-5 px-3 py-2 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span className="text-sm text-[#16a34a] font-medium">{selectedService.name}</span>
+                <span className="text-xs text-[#888] ml-auto">{fmt(selectedService.price)} · {selectedService.duration_minutes} min</span>
+              </div>
+            )}
+            {!svcPreset && <p className="text-sm text-[#888] mb-5">Elige tu barbero para empezar.</p>}
             <div className="space-y-2.5">
               {barbers.map(b => (
                 <button
                   key={b.id}
-                  onClick={() => { setSelectedBarber(b); setStep('service'); }}
+                  onClick={() => { setSelectedBarber(b); setStep(svcPreset ? 'date' : 'service'); }}
                   className="w-full flex items-center gap-4 p-4 bg-[#f8f7f4] border border-[#e8e6e0] hover:border-[#1a1818] hover:bg-white rounded-xl transition-all group text-left"
                 >
                   <div className="w-11 h-11 rounded-full bg-[#e8e6e0] flex items-center justify-center text-[#1a1818] font-bold text-base flex-shrink-0 overflow-hidden">
@@ -250,7 +281,7 @@ export default function BookingWizard({ barbershop, barbers, services }: Props) 
         {/* Step 3: Date */}
         {step === 'date' && (
           <div>
-            <button onClick={() => setStep('service')} className={T.btnBack}>
+            <button onClick={() => setStep(svcPreset ? 'barber' : 'service')} className={T.btnBack}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               Volver
             </button>

@@ -161,7 +161,7 @@ export default function GalleryManager({ barbers, isOwner, currentMemberId }: Pr
               {canDelete(img) && (
                 <button
                   onClick={e => { e.stopPropagation(); handleDelete(img); }}
-                  className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-10"
+                  className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity hover:bg-red-600 active:bg-red-700 z-10"
                   title="Eliminar"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

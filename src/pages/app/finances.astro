@@ -1,0 +1,20 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import BarberFinances from '@/components/finances/BarberFinances';
+
+const member     = Astro.locals.member!;
+const barbershop = Astro.locals.barbershop!;
+
+// Accessible to both barbers and owners
+if (!member) {
+  return Astro.redirect('/login');
+}
+---
+
+<DashboardLayout title="Mis Finanzas">
+  <BarberFinances
+    client:load
+    memberId={member.id}
+    barbershopId={barbershop.id}
+  />
+</DashboardLayout>

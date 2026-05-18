@@ -267,11 +267,21 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
     ? blocks.filter(b => b.barber_id === timelineBarber)
     : blocks;
 
+  // ── Earnings stats for current period ────────────────────────────────────
+  const statsApts = view === 'month'
+    ? filteredApts
+    : (isOwner && timelineBarber)
+      ? appointments.filter(a => a.barber_id === timelineBarber)
+      : appointments;
+  const earningsApts  = statsApts.filter(a => a.status === 'confirmed' || a.status === 'completed');
+  const totalEarnings = earningsApts.reduce((sum, a) => sum + (a.services?.price ?? 0), 0);
+  const activeCount   = statsApts.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').length;
+
   return (
     <div className="flex flex-col h-full">
 
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1">
             <button onClick={navPrev} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
@@ -310,6 +320,29 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
           </div>
         </div>
       </div>
+
+      {/* ── Earnings strip ──────────────────────────────────────────────────── */}
+      {!loading && (
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          <div className="flex items-center gap-2.5 px-4 py-2 bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-text-secondary)]"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span className="text-xs text-[var(--color-text-secondary)]">
+              {view === 'day' ? 'Hoy' : view === 'week' ? 'Esta semana' : 'Este mes'}
+            </span>
+            <span className="text-sm font-bold text-[var(--color-text-primary)]">{activeCount} cita{activeCount !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex items-center gap-2.5 px-4 py-2 bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#22c55e]"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <span className="text-xs text-[var(--color-text-secondary)]">Ingresos est.</span>
+            <span className="text-sm font-bold text-[#22c55e]">{formatCOP(totalEarnings)}</span>
+          </div>
+          {earningsApts.length !== activeCount && (
+            <span className="text-xs text-[var(--color-text-secondary)]">
+              ({activeCount - earningsApts.length} pendiente{activeCount - earningsApts.length !== 1 ? 's' : ''})
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── MONTH VIEW ──────────────────────────────────────────────────────── */}
       {view === 'month' && (
@@ -444,15 +477,18 @@ export default function AgendaView({ barbers, isOwner, currentMemberId }: Props)
             {weekDays.map(d => {
               const ds = toDateStr(d);
               const isToday = ds === todayStr;
-              const cnt = appointments.filter(a => a.date === ds).length;
+              const dayApts = appointments.filter(a => a.date === ds && (!isOwner || !timelineBarber || a.barber_id === timelineBarber));
+              const cnt = dayApts.length;
+              const dayEarnings = dayApts.filter(a => a.status === 'confirmed' || a.status === 'completed').reduce((s, a) => s + (a.services?.price ?? 0), 0);
               return (
                 <button key={ds} onClick={() => { setCurrentDate(new Date(d)); setView('day'); }}
-                  className={`p-4 text-center hover:bg-[var(--color-surface-overlay)] transition-colors border-r border-[var(--color-border)] last:border-r-0 ${isToday ? 'bg-[var(--color-brand)]/10' : ''}`}>
+                  className={`p-3 text-center hover:bg-[var(--color-surface-overlay)] transition-colors border-r border-[var(--color-border)] last:border-r-0 ${isToday ? 'bg-[var(--color-brand)]/10' : ''}`}>
                   <p className="text-xs text-[var(--color-text-secondary)] mb-1 uppercase">{d.toLocaleDateString('es-CO', { weekday: 'short' })}</p>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-sm font-semibold ${isToday ? 'bg-[var(--color-brand)] text-white' : 'text-white'}`}>
                     {d.getDate()}
                   </div>
                   {cnt > 0 && <div className="mt-1 text-xs text-[var(--color-brand-light)] font-medium">{cnt} cita{cnt > 1 ? 's' : ''}</div>}
+                  {dayEarnings > 0 && <div className="text-[10px] text-[#22c55e] font-semibold">{formatCOP(dayEarnings)}</div>}
                 </button>
               );
             })}

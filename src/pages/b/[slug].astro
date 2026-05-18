@@ -42,6 +42,34 @@ for (const img of galleryImages) {
 function formatCOP(n: number) {
   return '$' + Math.round(n).toLocaleString('es-CO').replace(/,/g, '.');
 }
+
+// ── Landing blocks ───────────────────────────────────────────────────────────
+type BlockType = 'hero' | 'text' | 'services' | 'gallery' | 'booking' | 'whatsapp' | 'divider' | 'image_text' | 'cta';
+interface Block {
+  id: string;
+  type: BlockType;
+  visible: boolean;
+  content: Record<string, unknown>;
+}
+
+const DEFAULT_BLOCKS: Block[] = [
+  { id: 'hero',     type: 'hero',     visible: true, content: { title: '', subtitle: '', cta_text: 'Reservar cita', cta_show: true } },
+  { id: 'services', type: 'services', visible: true, content: { heading: 'Servicios', show_book_btn: true } },
+  { id: 'gallery',  type: 'gallery',  visible: true, content: { heading: 'Nuestro trabajo' } },
+  { id: 'booking',  type: 'booking',  visible: true, content: { heading: 'Reserva tu cita' } },
+  { id: 'whatsapp', type: 'whatsapp', visible: true, content: { text: 'Reservar por WhatsApp' } },
+];
+
+const rawBlocks = Array.isArray(barbershop.landing_blocks) && barbershop.landing_blocks.length > 0
+  ? barbershop.landing_blocks as Block[]
+  : DEFAULT_BLOCKS;
+
+// Only render visible blocks
+const blocks = rawBlocks.filter((b: Block) => b.visible);
+
+function blockOf(type: BlockType): Block | undefined {
+  return blocks.find((b: Block) => b.type === type);
+}
 ---
 
 <!DOCTYPE html>
@@ -63,97 +91,107 @@ function formatCOP(n: number) {
 <body style="background:#f5f4f1; color:#1a1818; margin:0;">
 
   <!-- ── HERO ─────────────────────────────────────────────────────────── -->
-  <section style="position:relative; height:100svh; min-height:560px; display:flex; flex-direction:column; justify-content:flex-end; overflow:hidden;">
+  {(() => {
+    const heroBlock = blocks.find((b: Block) => b.type === 'hero') ?? DEFAULT_BLOCKS[0];
+    const c = heroBlock.content;
+    const heroTitle = (c.title as string) || barbershop.name;
+    const heroSubtitle = (c.subtitle as string) || barbershop.description || '';
+    const ctaText = (c.cta_text as string) || 'Reservar cita';
+    const ctaShow = c.cta_show !== false;
+    return (
+      <section style="position:relative; height:100svh; min-height:560px; display:flex; flex-direction:column; justify-content:flex-end; overflow:hidden;">
 
-    {barbershop.cover_image_url ? (
-      <img
-        src={barbershop.cover_image_url}
-        alt=""
-        class="hero-img"
-        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"
-      />
-    ) : (
-      <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1a1818 0%,#2d2b28 100%);"></div>
-    )}
-
-    <!-- gradient overlay — bottom-heavy so text pops cleanly -->
-    <div style="position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.82) 100%);"></div>
-
-    <!-- hero content -->
-    <div style="position:relative;padding:0 24px 56px;max-width:720px;margin:0 auto;width:100%;box-sizing:border-box;">
-
-      <!-- logo badge -->
-      <div style="width:72px;height:72px;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 8px 32px rgba(0,0,0,0.4);margin-bottom:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
-        {barbershop.logo_url
-          ? <img src={barbershop.logo_url} alt={barbershop.name} style="width:100%;height:100%;object-fit:cover;" />
-          : <span style="font-size:28px;font-weight:900;color:#1a1818;">{barbershop.name.charAt(0)}</span>
-        }
-      </div>
-
-      <h1 style="font-size:clamp(2rem,6vw,3.5rem);font-weight:900;color:#fff;line-height:1.05;margin:0 0 12px;letter-spacing:-0.02em;">
-        {barbershop.name}
-      </h1>
-
-      {barbershop.description && (
-        <p style="font-size:1.05rem;color:rgba(255,255,255,0.72);margin:0 0 24px;max-width:480px;line-height:1.6;">
-          {barbershop.description}
-        </p>
-      )}
-
-      <!-- meta pills -->
-      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:32px;">
-        {barbershop.city && (
-          <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:0.8rem;font-weight:500;padding:6px 12px;border-radius:999px;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            {barbershop.city}{barbershop.address ? ', ' + barbershop.address : ''}
-          </span>
+        {barbershop.cover_image_url ? (
+          <img
+            src={barbershop.cover_image_url}
+            alt=""
+            class="hero-img"
+            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"
+          />
+        ) : (
+          <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1a1818 0%,#2d2b28 100%);"></div>
         )}
-        {(barbershop.phone || barbershop.whatsapp) && (
-          <a
-            href={'https://wa.me/57' + (barbershop.whatsapp || barbershop.phone).replace(/\D/g,'')}
-            target="_blank" rel="noopener"
-            style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:0.8rem;font-weight:500;padding:6px 12px;border-radius:999px;text-decoration:none;transition:background 0.2s;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-            {barbershop.phone || barbershop.whatsapp}
-          </a>
-        )}
-        {barbershop.instagram && (
-          <a
-            href={`https://instagram.com/${barbershop.instagram.replace('@','')}`}
-            target="_blank" rel="noopener"
-            style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:0.8rem;font-weight:500;padding:6px 12px;border-radius:999px;text-decoration:none;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
-            {barbershop.instagram}
-          </a>
-        )}
-      </div>
 
-      <!-- CTA -->
-      {barbers.length > 0 && services.length > 0 ? (
-        <a
-          href="#booking"
-          style="display:inline-flex;align-items:center;gap:8px;background:#fff;color:#1a1818;font-size:1rem;font-weight:700;padding:14px 28px;border-radius:14px;text-decoration:none;letter-spacing:-0.01em;box-shadow:0 4px 24px rgba(0,0,0,0.25);transition:transform 0.15s,box-shadow 0.15s;"
-          onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 8px 32px rgba(0,0,0,0.3)'"
-          onmouseout="this.style.transform='';this.style.boxShadow='0 4px 24px rgba(0,0,0,0.25)'"
-        >
-          Reservar cita
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </a>
-      ) : barbershop.whatsapp ? (
-        <a
-          href={`https://wa.me/57${barbershop.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, quiero reservar una cita en ' + barbershop.name)}`}
-          target="_blank"
-          style="display:inline-flex;align-items:center;gap:8px;background:#25d366;color:#fff;font-size:1rem;font-weight:700;padding:14px 28px;border-radius:14px;text-decoration:none;box-shadow:0 4px 24px rgba(37,211,102,0.4);">
-          Reservar por WhatsApp
-        </a>
-      ) : null}
-    </div>
+        <!-- gradient overlay — bottom-heavy so text pops cleanly -->
+        <div style="position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.82) 100%);"></div>
 
-    <!-- scroll hint -->
-    <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0.5;animation:bounce 2s infinite;">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-    </div>
-  </section>
+        <!-- hero content -->
+        <div style="position:relative;padding:0 24px 56px;max-width:720px;margin:0 auto;width:100%;box-sizing:border-box;">
+
+          <!-- logo badge -->
+          <div style="width:72px;height:72px;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 8px 32px rgba(0,0,0,0.4);margin-bottom:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+            {barbershop.logo_url
+              ? <img src={barbershop.logo_url} alt={barbershop.name} style="width:100%;height:100%;object-fit:cover;" />
+              : <span style="font-size:28px;font-weight:900;color:#1a1818;">{barbershop.name.charAt(0)}</span>
+            }
+          </div>
+
+          <h1 style="font-size:clamp(2rem,6vw,3.5rem);font-weight:900;color:#fff;line-height:1.05;margin:0 0 12px;letter-spacing:-0.02em;">
+            {heroTitle}
+          </h1>
+
+          {heroSubtitle && (
+            <p style="font-size:1.05rem;color:rgba(255,255,255,0.72);margin:0 0 24px;max-width:480px;line-height:1.6;">
+              {heroSubtitle}
+            </p>
+          )}
+
+          <!-- meta pills -->
+          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:32px;">
+            {barbershop.city && (
+              <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:0.8rem;font-weight:500;padding:6px 12px;border-radius:999px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                {barbershop.city}{barbershop.address ? ', ' + barbershop.address : ''}
+              </span>
+            )}
+            {(barbershop.phone || barbershop.whatsapp) && (
+              <a
+                href={'https://wa.me/57' + (barbershop.whatsapp || barbershop.phone).replace(/\D/g,'')}
+                target="_blank" rel="noopener"
+                style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:0.8rem;font-weight:500;padding:6px 12px;border-radius:999px;text-decoration:none;transition:background 0.2s;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                {barbershop.phone || barbershop.whatsapp}
+              </a>
+            )}
+            {barbershop.instagram && (
+              <a
+                href={`https://instagram.com/${barbershop.instagram.replace('@','')}`}
+                target="_blank" rel="noopener"
+                style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:0.8rem;font-weight:500;padding:6px 12px;border-radius:999px;text-decoration:none;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+                {barbershop.instagram}
+              </a>
+            )}
+          </div>
+
+          <!-- CTA -->
+          {ctaShow && barbers.length > 0 && services.length > 0 ? (
+            <a
+              href="#booking"
+              style="display:inline-flex;align-items:center;gap:8px;background:#fff;color:#1a1818;font-size:1rem;font-weight:700;padding:14px 28px;border-radius:14px;text-decoration:none;letter-spacing:-0.01em;box-shadow:0 4px 24px rgba(0,0,0,0.25);transition:transform 0.15s,box-shadow 0.15s;"
+              onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 8px 32px rgba(0,0,0,0.3)'"
+              onmouseout="this.style.transform='';this.style.boxShadow='0 4px 24px rgba(0,0,0,0.25)'"
+            >
+              {ctaText}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </a>
+          ) : ctaShow && barbershop.whatsapp ? (
+            <a
+              href={`https://wa.me/57${barbershop.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, quiero reservar una cita en ' + barbershop.name)}`}
+              target="_blank"
+              style="display:inline-flex;align-items:center;gap:8px;background:#25d366;color:#fff;font-size:1rem;font-weight:700;padding:14px 28px;border-radius:14px;text-decoration:none;box-shadow:0 4px 24px rgba(37,211,102,0.4);">
+              {ctaText}
+            </a>
+          ) : null}
+        </div>
+
+        <!-- scroll hint -->
+        <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0.5;animation:bounce 2s infinite;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </section>
+    );
+  })()}
 
   <style>
     @keyframes bounce {
@@ -211,101 +249,240 @@ function formatCOP(n: number) {
   <!-- ── CONTENT ─────────────────────────────────────────────────────── -->
   <div style="max-width:800px;margin:0 auto;padding:0 20px 80px;">
 
-    <!-- ── SERVICES ──────────────────────────────────────────────────── -->
-    {services.length > 0 && (
-      <section style="padding-top:64px;">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:28px;">
-          <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0;">Servicios</h2>
-          <span style="font-size:0.8rem;color:#888;font-weight:500;">{services.length} disponibles</span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">
-          {services.map(svc => (
-            <div style="background:#fff;border-radius:16px;padding:20px;border:1px solid #e8e6e0;display:flex;flex-direction:column;gap:8px;transition:border-color 0.2s,transform 0.2s;"
-              onmouseover="this.style.borderColor='#1a1818';this.style.transform='translateY(-2px)'"
-              onmouseout="this.style.borderColor='#e8e6e0';this.style.transform=''">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-                <p style="font-weight:700;color:#1a1818;margin:0;font-size:0.95rem;line-height:1.3;">{svc.name}</p>
-                <span style="font-weight:800;color:#1a1818;font-size:1rem;flex-shrink:0;">{formatCOP(svc.price)}</span>
-              </div>
-              {svc.description && (
-                <p style="font-size:0.78rem;color:#888;margin:0;line-height:1.5;">{svc.description}</p>
-              )}
-              <p style="font-size:0.75rem;color:#aaa;margin:0;display:flex;align-items:center;gap:4px;">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                {svc.duration_minutes} min
-              </p>
+    {blocks.map((block: Block) => {
+      // ── services ──────────────────────────────────────────────────────
+      if (block.type === 'services' && services.length > 0) {
+        const heading = (block.content.heading as string) || 'Servicios';
+        return (
+          <section style="padding-top:64px;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:28px;">
+              <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0;">{heading}</h2>
+              <span style="font-size:0.8rem;color:#888;font-weight:500;">{services.length} disponibles</span>
             </div>
-          ))}
-        </div>
-      </section>
-    )}
-
-    <!-- ── GALLERY MARQUEE ───────────────────────────────────────────────── -->
-    {galleryImages.length > 0 && (
-      <section style="padding-top:56px;">
-        <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0 0 24px;">Nuestro trabajo</h2>
-
-        {/* Row per barber with photos */}
-        {Object.entries(byBarber).map(([barberId, imgs]) => {
-          const barber = barberMap[barberId];
-          const looped = [...imgs, ...imgs]; // duplicate for infinite loop
-          return (
-            <div style="margin-bottom:32px;">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-left:0;">
-                <div style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:#e8e6e0;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
-                  {barber.avatar_url
-                    ? <img src={barber.avatar_url} alt={barber.display_name} style="width:100%;height:100%;object-fit:cover;" />
-                    : <span style="font-weight:800;font-size:0.85rem;color:#1a1818;">{barber.display_name.charAt(0)}</span>
-                  }
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">
+              {services.map(svc => (
+                <div style="background:#fff;border-radius:16px;padding:20px;border:1px solid #e8e6e0;display:flex;flex-direction:column;gap:8px;transition:border-color 0.2s,transform 0.2s;"
+                  onmouseover="this.style.borderColor='#1a1818';this.style.transform='translateY(-2px)'"
+                  onmouseout="this.style.borderColor='#e8e6e0';this.style.transform=''">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+                    <p style="font-weight:700;color:#1a1818;margin:0;font-size:0.95rem;line-height:1.3;">{svc.name}</p>
+                    <span style="font-weight:800;color:#1a1818;font-size:1rem;flex-shrink:0;">{formatCOP(svc.price)}</span>
+                  </div>
+                  {svc.description && (
+                    <p style="font-size:0.78rem;color:#888;margin:0;line-height:1.5;">{svc.description}</p>
+                  )}
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
+                    <p style="font-size:0.75rem;color:#aaa;margin:0;display:flex;align-items:center;gap:4px;">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      {svc.duration_minutes} min
+                    </p>
+                    {barbers.length > 0 && block.content.show_book_btn !== false && (
+                      <button
+                        onclick={`bookService('${svc.id}')`}
+                        style="font-size:0.72rem;font-weight:700;color:#fff;background:#1a1818;border:none;border-radius:8px;padding:5px 12px;cursor:pointer;transition:background 0.15s;"
+                        onmouseover="this.style.background='#2d2b28'"
+                        onmouseout="this.style.background='#1a1818'"
+                      >
+                        Reservar →
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <p style="font-weight:700;color:#1a1818;font-size:0.9rem;margin:0;">{barber.display_name}</p>
-              </div>
-              <div class="marquee-outer">
-                <div class="marquee-track" style={`animation-duration:${Math.max(imgs.length * 5, 15)}s`}>
-                  {looped.map((img, i) => (
-                    <button
-                      class="marquee-photo"
-                      data-src={img.image_url}
-                      data-caption={img.caption ?? ''}
-                      data-barber={barber.display_name}
-                      onclick="openLightbox(this)"
-                      aria-label={img.caption ?? 'Ver foto'}
-                    >
-                      <img src={img.image_url} alt={img.caption ?? ''} loading="lazy" />
-                    </button>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
-          );
-        })}
+          </section>
+        );
+      }
 
-        {/* Unassigned row */}
-        {unassigned.length > 0 && (
-          <div style="margin-bottom:32px;">
-            {Object.keys(byBarber).length > 0 && (
-              <p style="font-weight:700;color:#1a1818;font-size:0.9rem;margin:0 0 12px;">Más cortes</p>
+      // ── gallery ───────────────────────────────────────────────────────
+      if (block.type === 'gallery' && galleryImages.length > 0) {
+        const heading = (block.content.heading as string) || 'Nuestro trabajo';
+        return (
+          <section style="padding-top:56px;">
+            <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0 0 24px;">{heading}</h2>
+
+            {Object.entries(byBarber).map(([barberId, imgs]) => {
+              const barber = barberMap[barberId];
+              const looped = [...imgs, ...imgs];
+              return (
+                <div style="margin-bottom:32px;">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-left:0;">
+                    <div style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:#e8e6e0;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+                      {barber.avatar_url
+                        ? <img src={barber.avatar_url} alt={barber.display_name} style="width:100%;height:100%;object-fit:cover;" />
+                        : <span style="font-weight:800;font-size:0.85rem;color:#1a1818;">{barber.display_name.charAt(0)}</span>
+                      }
+                    </div>
+                    <p style="font-weight:700;color:#1a1818;font-size:0.9rem;margin:0;">{barber.display_name}</p>
+                  </div>
+                  <div class="marquee-outer">
+                    <div class="marquee-track" style={`animation-duration:${Math.max(imgs.length * 5, 15)}s`}>
+                      {looped.map((img, i) => (
+                        <button
+                          class="marquee-photo"
+                          data-src={img.image_url}
+                          data-caption={img.caption ?? ''}
+                          data-barber={barber.display_name}
+                          onclick="openLightbox(this)"
+                          aria-label={img.caption ?? 'Ver foto'}
+                        >
+                          <img src={img.image_url} alt={img.caption ?? ''} loading="lazy" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {unassigned.length > 0 && (
+              <div style="margin-bottom:32px;">
+                {Object.keys(byBarber).length > 0 && (
+                  <p style="font-weight:700;color:#1a1818;font-size:0.9rem;margin:0 0 12px;">Más cortes</p>
+                )}
+                <div class="marquee-outer">
+                  <div class="marquee-track" style={`animation-duration:${Math.max(unassigned.length * 5, 15)}s`}>
+                    {[...unassigned, ...unassigned].map((img, i) => (
+                      <button
+                        class="marquee-photo"
+                        data-src={img.image_url}
+                        data-caption={img.caption ?? ''}
+                        data-barber=""
+                        onclick="openLightbox(this)"
+                        aria-label={img.caption ?? 'Ver foto'}
+                      >
+                        <img src={img.image_url} alt={img.caption ?? ''} loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
-            <div class="marquee-outer">
-              <div class="marquee-track" style={`animation-duration:${Math.max(unassigned.length * 5, 15)}s`}>
-                {[...unassigned, ...unassigned].map((img, i) => (
-                  <button
-                    class="marquee-photo"
-                    data-src={img.image_url}
-                    data-caption={img.caption ?? ''}
-                    data-barber=""
-                    onclick="openLightbox(this)"
-                    aria-label={img.caption ?? 'Ver foto'}
-                  >
-                    <img src={img.image_url} alt={img.caption ?? ''} loading="lazy" />
-                  </button>
-                ))}
+          </section>
+        );
+      }
+
+      // ── booking ───────────────────────────────────────────────────────
+      if (block.type === 'booking' && barbers.length > 0 && services.length > 0) {
+        const heading = (block.content.heading as string) || 'Reserva tu cita';
+        return (
+          <section id="booking" style="padding-top:56px;">
+            <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0 0 28px;">{heading}</h2>
+            <BookingWizard
+              client:load
+              barbershop={{ id: barbershop.id, name: barbershop.name, whatsapp: barbershop.whatsapp }}
+              barbers={barbers}
+              services={services}
+            />
+          </section>
+        );
+      }
+
+      // ── whatsapp fallback ─────────────────────────────────────────────
+      if (block.type === 'whatsapp' && barbershop.whatsapp) {
+        const btnText = (block.content.text as string) || 'Reservar por WhatsApp';
+        // Only show if booking wizard is NOT shown
+        const bookingVisible = blocks.some((b: Block) => b.type === 'booking') && barbers.length > 0 && services.length > 0;
+        if (bookingVisible) return null;
+        return (
+          <section style="padding-top:56px;">
+            <div style="background:#fff;border:1px solid #e8e6e0;border-radius:20px;padding:40px;text-align:center;">
+              <div style="width:56px;height:56px;background:#25d366;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
               </div>
+              <h3 style="font-size:1.4rem;font-weight:800;color:#1a1818;margin:0 0 8px;letter-spacing:-0.02em;">¿Listo para tu corte?</h3>
+              <p style="color:#888;margin:0 0 24px;font-size:0.95rem;">Escríbenos y agendamos tu cita en minutos.</p>
+              <a
+                href={`https://wa.me/57${barbershop.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, quiero reservar una cita en ' + barbershop.name)}`}
+                target="_blank"
+                style="display:inline-flex;align-items:center;gap:8px;background:#25d366;color:#fff;font-weight:700;font-size:0.95rem;padding:12px 24px;border-radius:12px;text-decoration:none;">
+                {btnText}
+              </a>
             </div>
+          </section>
+        );
+      }
+
+      // ── text ──────────────────────────────────────────────────────────
+      if (block.type === 'text') {
+        const heading = block.content.heading as string;
+        const body = block.content.body as string;
+        if (!heading && !body) return null;
+        return (
+          <section style="padding-top:56px;">
+            {heading && (
+              <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0 0 16px;">{heading}</h2>
+            )}
+            {body && (
+              <p style="font-size:1rem;color:#555;line-height:1.7;margin:0;">{body}</p>
+            )}
+          </section>
+        );
+      }
+
+      // ── divider ───────────────────────────────────────────────────────
+      if (block.type === 'divider') {
+        return <hr style="border:none;border-top:1px solid #e8e6e0;margin:32px 0;" />;
+      }
+
+      // ── image_text ────────────────────────────────────────────────────
+      if (block.type === 'image_text') {
+        const heading = block.content.heading as string;
+        const body    = block.content.body as string;
+        const imgUrl  = block.content.image_url as string;
+        const imgLeft = block.content.image_side !== 'right';
+        if (!heading && !body && !imgUrl) return null;
+        const imgEl = imgUrl ? (
+          <div style="flex:0 0 45%;">
+            <img src={imgUrl} alt={heading || ''} style="width:100%;height:100%;min-height:240px;object-fit:cover;border-radius:16px;display:block;" />
           </div>
-        )}
-      </section>
-    )}
+        ) : null;
+        const textEl = (
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;">
+            {heading && <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0;">{heading}</h2>}
+            {body    && <p  style="font-size:1rem;color:#555;line-height:1.7;margin:0;">{body}</p>}
+          </div>
+        );
+        return (
+          <section style="padding-top:56px;">
+            <div style={`display:flex;gap:32px;align-items:center;flex-direction:${imgUrl ? 'row' : 'column'};`}>
+              {imgLeft ? imgEl : textEl}
+              {imgLeft ? textEl : imgEl}
+            </div>
+          </section>
+        );
+      }
+
+      // ── cta ───────────────────────────────────────────────────────────
+      if (block.type === 'cta') {
+        const heading    = block.content.heading as string;
+        const body       = block.content.body as string;
+        const buttonText = (block.content.button_text as string) || 'Reservar ahora';
+        const dark       = block.content.style !== 'light';
+        if (!heading && !body) return null;
+        return (
+          <section style="padding-top:48px;">
+            <div style={`background:${dark ? '#1a1818' : '#fff'};border:${dark ? 'none' : '1px solid #e8e6e0'};border-radius:20px;padding:48px 40px;text-align:center;`}>
+              {heading && (
+                <h2 style={`font-size:1.6rem;font-weight:900;color:${dark ? '#fff' : '#1a1818'};letter-spacing:-0.02em;margin:0 0 12px;`}>{heading}</h2>
+              )}
+              {body && (
+                <p style={`font-size:0.95rem;color:${dark ? 'rgba(255,255,255,0.65)' : '#888'};line-height:1.6;margin:0 auto 24px;max-width:460px;`}>{body}</p>
+              )}
+              <a
+                href="#booking"
+                style={`display:inline-flex;align-items:center;gap:8px;background:${dark ? '#fff' : '#1a1818'};color:${dark ? '#1a1818' : '#fff'};font-weight:700;font-size:0.95rem;padding:12px 28px;border-radius:12px;text-decoration:none;box-shadow:${dark ? '0 4px 20px rgba(255,255,255,0.12)' : '0 4px 20px rgba(0,0,0,0.18)'};`}
+              >
+                {buttonText}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </a>
+            </div>
+          </section>
+        );
+      }
+
+      return null;
+    })}
 
     <!-- ── LIGHTBOX ───────────────────────────────────────────────────────── -->
     <div id="lightbox" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.92);display:none;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeLightbox()">
@@ -318,38 +495,6 @@ function formatCOP(n: number) {
         </div>
       </div>
     </div>
-
-    <!-- ── BOOKING WIZARD ─────────────────────────────────────────────── -->
-    {barbers.length > 0 && services.length > 0 && (
-      <section id="booking" style="padding-top:56px;">
-        <h2 style="font-size:1.5rem;font-weight:800;color:#1a1818;letter-spacing:-0.02em;margin:0 0 28px;">Reserva tu cita</h2>
-        <BookingWizard
-          client:load
-          barbershop={{ id: barbershop.id, name: barbershop.name, whatsapp: barbershop.whatsapp }}
-          barbers={barbers}
-          services={services}
-        />
-      </section>
-    )}
-
-    <!-- ── WHATSAPP FALLBACK ──────────────────────────────────────────── -->
-    {(barbers.length === 0 || services.length === 0) && barbershop.whatsapp && (
-      <section style="padding-top:56px;">
-        <div style="background:#fff;border:1px solid #e8e6e0;border-radius:20px;padding:40px;text-align:center;">
-          <div style="width:56px;height:56px;background:#25d366;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-          </div>
-          <h3 style="font-size:1.4rem;font-weight:800;color:#1a1818;margin:0 0 8px;letter-spacing:-0.02em;">¿Listo para tu corte?</h3>
-          <p style="color:#888;margin:0 0 24px;font-size:0.95rem;">Escríbenos y agendamos tu cita en minutos.</p>
-          <a
-            href={`https://wa.me/57${barbershop.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, quiero reservar una cita en ' + barbershop.name)}`}
-            target="_blank"
-            style="display:inline-flex;align-items:center;gap:8px;background:#25d366;color:#fff;font-weight:700;font-size:0.95rem;padding:12px 24px;border-radius:12px;text-decoration:none;">
-            Escribir por WhatsApp
-          </a>
-        </div>
-      </section>
-    )}
 
     <!-- ── FOOTER ─────────────────────────────────────────────────────── -->
     <div style="padding-top:56px;text-align:center;border-top:1px solid #e8e6e0;margin-top:56px;">
@@ -380,6 +525,12 @@ function formatCOP(n: number) {
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeLightbox();
     });
+
+    function bookService(serviceId) {
+      var booking = document.getElementById('booking');
+      if (booking) booking.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.dispatchEvent(new CustomEvent('book-service', { detail: { serviceId: serviceId } }));
+    }
   </script>
 </body>
 </html>

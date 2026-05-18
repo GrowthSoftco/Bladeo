@@ -3,6 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { createAdminClient } from '@/lib/supabase';
 import { formatCOP, formatDate } from '@/lib/utils';
 import OwnerUtilities from '@/components/dashboard/OwnerUtilities';
+import BarberPeriodStats from '@/components/dashboard/BarberPeriodStats';
 
 const admin       = createAdminClient();
 const barbershop  = Astro.locals.barbershop;
@@ -185,47 +186,41 @@ function pct(part: number, total: number) {
     <p class="text-[var(--color-text-secondary)] capitalize">{todayFmt}</p>
   </div>
 
-  <!-- ── HOY: stats cards ────────────────────────────────────────────────────── -->
-  <p class="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">Hoy</p>
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Citas hoy</p>
-      <p class="text-3xl font-bold text-white">{todayAppointments.length}</p>
-      <p class="text-[var(--color-text-secondary)] text-xs mt-1">{pendingAppointments} pendientes</p>
-    </div>
-
-    {isBarber ? (
-      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-        <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Mis ganancias hoy</p>
-        <p class="text-3xl font-bold text-[var(--color-success)]">{formatCOP(barberEarnings)}</p>
-        <p class="text-[var(--color-text-secondary)] text-xs mt-1">{barberSalesCount} ventas · {member?.commission_pct ?? 0}%</p>
+  <!-- Barber: Hoy / Semana / Mes unificado -->
+  {isBarber ? (
+    <BarberPeriodStats client:load memberId={member!.id} />
+  ) : (
+    <>
+      <!-- Owner: HOY stats cards -->
+      <p class="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">Hoy</p>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+          <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Citas hoy</p>
+          <p class="text-3xl font-bold text-white">{todayAppointments.length}</p>
+          <p class="text-[var(--color-text-secondary)] text-xs mt-1">{pendingAppointments} pendientes</p>
+        </div>
+        <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+          <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Ingresos hoy</p>
+          <p class="text-3xl font-bold text-white">{formatCOP(todayRevenue)}</p>
+          <p class="text-[var(--color-text-secondary)] text-xs mt-1">{todaySales.length} ventas</p>
+        </div>
+        <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+          <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Clientes nuevos</p>
+          <p class="text-3xl font-bold text-white">{newClients?.length ?? 0}</p>
+          <p class="text-[var(--color-text-secondary)] text-xs mt-1">Esta semana</p>
+        </div>
+        <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
+          <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Citas pendientes</p>
+          <p class="text-3xl font-bold text-white">{pendingAppointments}</p>
+          <p class="text-[var(--color-text-secondary)] text-xs mt-1">Para hoy</p>
+        </div>
       </div>
-    ) : (
-      <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-        <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Ingresos hoy</p>
-        <p class="text-3xl font-bold text-white">{formatCOP(todayRevenue)}</p>
-        <p class="text-[var(--color-text-secondary)] text-xs mt-1">{todaySales.length} ventas</p>
+
+      <!-- Owner utilities today -->
+      <div class="mb-8">
+        <OwnerUtilities sales={ownerSalesData} client:load />
       </div>
-    )}
-
-    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Clientes nuevos</p>
-      <p class="text-3xl font-bold text-white">{newClients?.length ?? 0}</p>
-      <p class="text-[var(--color-text-secondary)] text-xs mt-1">Esta semana</p>
-    </div>
-
-    <div class="bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-5">
-      <p class="text-[var(--color-text-secondary)] text-xs font-medium uppercase tracking-wide mb-3">Citas pendientes</p>
-      <p class="text-3xl font-bold text-white">{pendingAppointments}</p>
-      <p class="text-[var(--color-text-secondary)] text-xs mt-1">Para hoy</p>
-    </div>
-  </div>
-
-  <!-- Owner utilities today -->
-  {!isBarber && (
-    <div class="mb-8">
-      <OwnerUtilities sales={ownerSalesData} client:load />
-    </div>
+    </>
   )}
 
   <!-- ── MES: resumen mensual (solo admin) ───────────────────────────────────── -->
