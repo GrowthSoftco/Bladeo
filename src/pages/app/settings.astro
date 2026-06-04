@@ -543,24 +543,25 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
 
     fetch('/api/upload/barbershop-image', { method: 'POST', body: fd })
       .then(function(r) {
-        return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; });
+        return r.text().then(function(text) {
+          try { return { ok: r.ok, status: r.status, data: JSON.parse(text) }; }
+          catch(e) { return { ok: false, status: r.status, data: { error: 'Respuesta inesperada del servidor (HTTP ' + r.status + ')' } }; }
+        });
       })
       .then(function(result) {
         if (!result.ok || result.data.error) {
           var msg = result.data.error || ('HTTP ' + result.status);
-          console.error('[upload] Error:', msg);
           statusEl.textContent = '✗ ' + msg;
-          statusEl.className = 'text-xs mt-2 text-red-400 text-center';
+          statusEl.style.cssText = 'display:block; color:#f87171; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
         } else {
-          statusEl.textContent = '✓ Guardado';
-          statusEl.className = 'text-xs mt-2 text-green-400 text-center';
-          setTimeout(function() { statusEl.style.display = 'none'; }, 2500);
+          statusEl.textContent = '✓ Imagen guardada';
+          statusEl.style.cssText = 'display:block; color:#4ade80; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
+          setTimeout(function() { statusEl.style.display = 'none'; }, 3000);
         }
       })
       .catch(function(err) {
-        console.error('[upload] fetch error:', err);
-        statusEl.textContent = '✗ Error de red al subir';
-        statusEl.className = 'text-xs mt-2 text-red-400 text-center';
+        statusEl.textContent = '✗ Error de conexión: ' + err.message;
+        statusEl.style.cssText = 'display:block; color:#f87171; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
       });
 
     // Reset input so same file can be re-selected
