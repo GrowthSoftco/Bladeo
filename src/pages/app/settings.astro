@@ -514,57 +514,78 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
   }
 
   // ── Barbershop image upload (logo / cover) ───────────────────────────────
-  function uploadBarbershopImage(input, type) {
+  // Uses signed URLs: browser uploads directly to Supabase Storage,
+  // server only handles auth + generating the URL + saving the path to DB.
+  async function uploadBarbershopImage(input, type) {
     var file = input.files && input.files[0];
     if (!file) return;
 
-    var statusEl = document.getElementById(type + '-status');
-    var previewWrap = document.getElementById(type + '-preview-wrap');
+    var allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      showStatus(type, '✗ Solo JPG, PNG o WEBP', 'error');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showStatus(type, '✗ Máximo 10 MB', 'error');
+      return;
+    }
 
-    // Show local preview immediately
+    // Local preview
     var reader = new FileReader();
     reader.onload = function(e) {
-      var existing = previewWrap.querySelector('img');
-      if (existing) {
-        existing.src = e.target.result;
-      } else {
-        previewWrap.innerHTML = '<img src="' + e.target.result + '" class="w-full h-full object-cover" />';
-      }
+      var wrap = document.getElementById(type + '-preview-wrap');
+      var img = wrap.querySelector('img');
+      if (img) { img.src = e.target.result; }
+      else { wrap.innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:cover;" />'; }
     };
     reader.readAsDataURL(file);
 
-    statusEl.textContent = 'Subiendo...';
-    statusEl.className = 'text-xs mt-2 text-[var(--color-text-secondary)] text-center';
-    statusEl.style.display = 'block';
-
-    var fd = new FormData();
-    fd.append('file', file);
-    fd.append('type', type);
-
-    fetch('/api/upload/barbershop-image', { method: 'POST', body: fd })
-      .then(function(r) {
-        return r.text().then(function(text) {
-          try { return { ok: r.ok, status: r.status, data: JSON.parse(text) }; }
-          catch(e) { return { ok: false, status: r.status, data: { error: 'HTTP ' + r.status + ': ' + text.slice(0,120) } }; }
-        });
-      })
-      .then(function(result) {
-        if (!result.ok || result.data.error) {
-          var msg = result.data.error || ('HTTP ' + result.status);
-          statusEl.textContent = '✗ ' + msg;
-          statusEl.style.cssText = 'display:block; color:#f87171; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
-        } else {
-          statusEl.textContent = '✓ Imagen guardada';
-          statusEl.style.cssText = 'display:block; color:#4ade80; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
-          setTimeout(function() { statusEl.style.display = 'none'; }, 3000);
-        }
-      })
-      .catch(function(err) {
-        statusEl.textContent = '✗ Error de conexión: ' + err.message;
-        statusEl.style.cssText = 'display:block; color:#f87171; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
-      });
-
-    // Reset input so same file can be re-selected
+    showStatus(type, 'Subiendo…', 'loading');
     input.value = '';
+
+    try {
+      // Step 1 — get signed upload URL from our API
+      var r1 = await fetch('/api/upload/barbershop-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: 1, type: type, contentType: file.type })
+      });
+      var d1 = await r1.json();
+      if (!r1.ok || d1.error) { showStatus(type, '✗ ' + (d1.error || 'Error paso 1'), 'error'); return; }
+
+      // Step 2 — upload file directly to Supabase Storage (no server binary handling)
+      var r2 = await fetch(d1.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file
+      });
+      if (!r2.ok) { showStatus(type, '✗ Error al subir imagen (storage ' + r2.status + ')', 'error'); return; }
+
+      // Step 3 — tell API to save the public URL in DB
+      var r3 = await fetch('/api/upload/barbershop-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: 2, type: type, path: d1.path })
+      });
+      var d3 = await r3.json();
+      if (!r3.ok || d3.error) { showStatus(type, '✗ ' + (d3.error || 'Error guardando'), 'error'); return; }
+
+      showStatus(type, '✓ Guardada', 'success');
+    } catch (err) {
+      showStatus(type, '✗ ' + err.message, 'error');
+    }
+  }
+
+  function showStatus(type, msg, state) {
+    var el = document.getElementById(type + '-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.fontSize = '0.75rem';
+    el.style.marginTop = '8px';
+    el.style.textAlign = 'center';
+    el.style.fontWeight = '600';
+    el.style.color = state === 'error' ? '#f87171' : state === 'success' ? '#4ade80' : '#9ca3af';
+    if (state === 'success') setTimeout(function() { el.style.display = 'none'; }, 3000);
   }
 </script>
