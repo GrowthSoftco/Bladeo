@@ -549,8 +549,6 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
         });
       })
       .then(function(result) {
-        // DEBUG: mostrar respuesta exacta
-        alert('Respuesta API (' + result.status + '):\n' + JSON.stringify(result.data, null, 2));
         if (!result.ok || result.data.error) {
           var msg = result.data.error || ('HTTP ' + result.status);
           statusEl.textContent = '✗ ' + msg;
@@ -562,8 +560,7 @@ const bankingEnabled = barbershop?.is_banking_correspondent === true;
         }
       })
       .catch(function(err) {
-        alert('Error de red: ' + err.message);
-        statusEl.textContent = '✗ Error de conexión';
+        statusEl.textContent = '✗ Error de conexión: ' + err.message;
         statusEl.style.cssText = 'display:block; color:#f87171; font-size:0.75rem; margin-top:8px; text-align:center; font-weight:600;';
       });
 
